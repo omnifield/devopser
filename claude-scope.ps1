@@ -5,6 +5,7 @@
 #   .\claude-scope.ps1 -Scope observability  # owner-observability -> stacks/observability/
 #   .\claude-scope.ps1 -Scope storage        # owner-storage       -> stacks/storage/
 #   .\claude-scope.ps1 -Scope registry       # owner-registry      -> registry/
+#   .\claude-scope.ps1 -Scope workstation    # owner-workstation   -> workstation/
 #
 # Scope = zone leaf name (or 'main'). Validated up-front via scope-resolve.mjs (fail-fast).
 # Sets OMNIFIELD_SCOPE, which main-session-marker.mjs / scope-identity.mjs read on SessionStart.

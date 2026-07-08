@@ -31,6 +31,7 @@ Repo-local north star. Родственные решения — оракул `e
 | `stacks/observability/` | OTEL collector :4317 → Loki :3100 + Prometheus :9090 → Grafana :3333 (дашборд Agent Fleet) | оракул `docker/observability/` (БЕЗ `.claude/` — см. брифы) |
 | `stacks/storage/` | minio (S3-совместимый) | оракул (ADR 071/072) |
 | `registry/` | ports.md + products.md — единый source of truth портов/продуктов/маршрутов | консолидация из DEPLOY.md продуктов |
+| `workstation/` | provisioning dev-машины: bootstrap базового слоя (git/node/uv/docker/claude) + карта репо | greenfield (инцидент 2026-07-08) |
 | `packages/` | (позже) control-plane backend/frontend при продуктизации | фаза 1+ |
 
 **Принцип стека:** каждый stack самодостаточен — `docker compose up -d` из его директории
@@ -48,7 +49,9 @@ Repo-local north star. Родственные решения — оракул `e
 
 ## Фазы
 
-- **Фаза 0 (MVP):** миграция стеков + registry (`briefs/infra-migration.md`).
+- **Фаза 0 (MVP):** миграция стеков + registry (`briefs/infra-migration.md`) + workstation-bootstrap
+  (`briefs/workstation-bootstrap.md` — capability `workstation`: provision/verify машины,
+  provider `windows-winget`; macOS/linux — extension по шву).
 - **Фаза 1:** control-plane (contract-first: список стеков / статус / up-down через API+UI).
 - **Дальше:** провайдеры `vps`/`cloud`, деплой-пайплайны продуктов, entitlement для внешних юзеров.
 

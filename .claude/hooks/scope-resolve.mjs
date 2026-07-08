@@ -10,6 +10,7 @@ export const ZONES = {
   observability: { relativePath: 'stacks/observability', name: 'observability — OTEL collector + Loki + Prometheus + Grafana' },
   storage: { relativePath: 'stacks/storage', name: 'storage — minio (S3-compatible)' },
   registry: { relativePath: 'registry', name: 'registry — ports / products / routes source of truth' },
+  workstation: { relativePath: 'workstation', name: 'workstation — dev-machine provisioning (bootstrap base toolchain + repo map)' },
 };
 
 export function resolveScope(scope) {
