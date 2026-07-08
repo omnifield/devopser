@@ -1,0 +1,18 @@
+# Runtime data (стеки пишут volumes/data рядом с собой — не трекаем)
+**/data/
+**/.env
+!**/.env.example
+
+# Node (tooling, если появится)
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Claude Code runtime (harness state — hooks/settings ARE tracked)
+.claude/.main-session-id
+.claude/settings.local.json
