@@ -23,7 +23,7 @@ projects/new/
 |---|---|---|
 | brainer | `omnifield/brainer` | `https://github.com/omnifield/brainer.git` |
 | commons | `omnifield/commons` | `https://github.com/omnifield/commons.git` |
-| devopser | `omnifield/devopser` | remote пока не заведён — перенести копией / завести origin (architect) |
+| devopser | `omnifield/devopser` | `https://github.com/omnifield/devopser.git` |
 | capsuleTech (оракул) | `capsuleTech` | `https://github.com/egor6-66/capsuleTech.git` |
 
 Перед клоном — git-auth (пост-шаг README): приватные репо без него не склонируются.
