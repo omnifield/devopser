@@ -10,8 +10,8 @@ POLICY: поставил что-то на машину руками → это g
 
 ## Quickstart — новая тачка, 2 команды
 
-PowerShell **от администратора** (инсталляторы Git/Docker просят UAC, `corepack enable`
-пишет в Program Files; из обычного шелла тоже отработает — corepack допишется warning'ом):
+Обычный PowerShell достаточен — winget сам поднимает UAC-промпты на machine-scope
+инсталляторы (Git, node, Docker Desktop), жать «да» по мере появления:
 
 ```powershell
 cd workstation
@@ -21,15 +21,22 @@ cd workstation
 
 Дальше: пост-шаги ниже → клон репо по [repos.md](repos.md) → работаешь.
 
-## Что ставит bootstrap (базовый слой, ровно 5)
+## Что ставит bootstrap (базовый слой, ровно 6)
+
+Канон набора — commons `standards/workflow/toolchain-pins.md`.
 
 | Tool | Как | Зачем |
 |---|---|---|
 | git | winget `Git.Git` | всё |
-| node LTS (+corepack) | winget `OpenJS.NodeJS.LTS` | JS-репо; corepack идёт в комплекте |
+| node LTS | winget `OpenJS.NodeJS.LTS` | JS-репо |
+| pnpm ≥10 | winget `pnpm.pnpm` | сам исполняет пин `packageManager` репо (см. ниже) |
 | uv | winget `astral-sh.uv` | Python-репо (сам качает CPython) |
 | Docker Desktop | winget `Docker.DockerDesktop` | стеки devopser |
 | claude CLI | нативный installer `claude.ai/install.ps1` | сессии |
+
+⚠️ **Corepack — НЕ опора** (deprecated, выпиливается из Node, требует ручного enable):
+`corepack enable` не выполняется нигде — ни здесь, ни в CI, ни в доках. pnpm <10 в
+verify-таблице = OUTDATED (не умеет сам исполнять `packageManager`) — bootstrap обновит.
 
 **Выбор способа установки claude CLI — нативный installer** (не `npm i -g`): не зависит от
 того, подхватился ли node в PATH текущей сессии посреди bootstrap'а, и самообновляется.
@@ -37,10 +44,13 @@ cd workstation
 
 ## Что bootstrap НЕ ставит (самособирается из пинов)
 
-Граница ответственности — базовый слой на машину, остальное декларируют репо продуктов:
+Граница ответственности — базовый слой на машину, остальное декларируют репо продуктов
+(полный набор пинов — commons `standards/workflow/toolchain-pins.md`):
 
 - `.python-version` → `uv sync` сам качает нужный CPython. **Никакого системного Python/pip.**
-- `packageManager` в package.json → corepack сам ставит нужный pnpm. **Никакого глобального pnpm.**
+- `packageManager` в package.json → **сам pnpm ≥10** переключается на запиненную версию
+  (`manage-package-manager-versions`, дефолт из коробки). Bootstrap ставит «любой 10.x+»,
+  конкретную версию дальше исполняет пин.
 - deps → `pnpm install` / `uv sync` в репо.
 
 Хочется добавить инструмент в bootstrap → сначала вопрос «а не пин ли это в репо продукта?».
@@ -63,11 +73,10 @@ cd workstation
 
 - **Нет winget** (LTSC / Server / старый Win10): поставить «App Installer» из Microsoft Store,
   либо msixbundle с github.com/microsoft/winget-cli/releases.
-- **`corepack enable` failed / EPERM**: node в Program Files — нужен elevated shell;
-  выполнить `corepack enable` от администратора один раз.
 - **Инструмент поставился, но MISSING в финальной таблице**: PATH-изменение не дошло до
   сессии — новый терминал → `.\bootstrap.ps1 -Verify`.
-- **corepack MISSING при живом node**: node поставлен без corepack (нестандартная сборка) —
-  `npm i -g corepack`.
+- **pnpm OUTDATED (<10)**: старый pnpm (npm-глобальный / corepack-шим) первым в PATH —
+  bootstrap ставит winget-standalone; если OUTDATED остался, снести старый
+  (`npm rm -g pnpm`) и новый терминал.
 - **Docker Desktop поставился, `docker` MISSING**: до первого запуска GUI бинарь может не
   попасть в PATH — см. пост-шаг 3, затем новый терминал.

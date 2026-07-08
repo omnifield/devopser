@@ -41,7 +41,7 @@ projects/new/
 2. **brainer**:
    ```powershell
    cd omnifield\brainer\backend;  uv sync        # .python-version -> uv сам качает CPython
-   cd ..\frontend;                pnpm install    # packageManager -> corepack сам ставит pnpm
+   cd ..\frontend;                pnpm install    # packageManager -> pnpm сам переключится на пин
    ```
 3. **commons / capsuleTech** — только чтение (канон и оракул), поднимать нечего.
 
