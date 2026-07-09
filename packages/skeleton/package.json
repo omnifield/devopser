@@ -1,0 +1,22 @@
+{
+  "name": "@omnifield/skeleton",
+  "version": "0.1.0",
+  "description": "Omnifield repo-skeleton: эталон вендоренных файлов + init/sync/drift-check (briefs/repo-skeleton-product.md D3)",
+  "type": "module",
+  "files": [
+    "files",
+    "init.mjs"
+  ],
+  "bin": {
+    "omnifield-skeleton": "./init.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnifield/devopser.git",
+    "directory": "packages/skeleton"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  }
+}

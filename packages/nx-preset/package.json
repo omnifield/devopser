@@ -1,0 +1,17 @@
+{
+  "name": "@omnifield/nx-preset",
+  "version": "0.1.0",
+  "description": "Omnifield nx-пресет: базовые targetDefaults + namedInputs продукт-репо (briefs/repo-skeleton-product.md D2)",
+  "files": [
+    "nx.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnifield/devopser.git",
+    "directory": "packages/nx-preset"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  }
+}

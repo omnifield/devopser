@@ -1,0 +1,34 @@
+{
+  "defaultBase": "main",
+  "analytics": false,
+  "targetDefaults": {
+    "build": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "lint": {
+      "cache": true,
+      "inputs": ["default", "^default"]
+    },
+    "typecheck": {
+      "cache": true,
+      "dependsOn": ["^typecheck"],
+      "inputs": ["default", "^default"]
+    },
+    "test": {
+      "cache": true,
+      "inputs": ["default", "^default"]
+    }
+  },
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "production": [
+      "default",
+      "!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
+      "!{projectRoot}/vitest.setup.ts"
+    ],
+    "sharedGlobals": ["{workspaceRoot}/biome.json"]
+  }
+}

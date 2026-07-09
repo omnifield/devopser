@@ -1,0 +1,29 @@
+{
+  "name": "devopser",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "build": "nx run-many -t build",
+    "test": "nx run-many -t test",
+    "typecheck": "nx run-many -t typecheck",
+    "lint": "biome check .",
+    "affected": "nx affected -t lint,typecheck,test,build",
+    "hygiene": "sherif",
+    "skeleton:check": "node packages/skeleton/init.mjs --check .",
+    "skeleton:sync": "node packages/skeleton/init.mjs ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
+    "@omnifield/biome-preset": "workspace:*",
+    "@omnifield/nx-preset": "workspace:*",
+    "husky": "^9.1.7",
+    "nx": "^23.0.1",
+    "sherif": "^1.13.0"
+  }
+}

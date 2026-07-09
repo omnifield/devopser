@@ -1,0 +1,17 @@
+# Dogfood-caller: devopser — юзер №0 собственного reusable CI (и drift-check'а).
+# Зелёный прогон здесь = смок D1+D3 без участия потребителей.
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: { contents: read, actions: read }
+
+jobs:
+  node:
+    uses: ./.github/workflows/node-ci.yml

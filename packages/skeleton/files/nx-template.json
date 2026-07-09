@@ -1,0 +1,4 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "extends": "@omnifield/nx-preset/nx.json"
+}

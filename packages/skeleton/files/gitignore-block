@@ -1,0 +1,23 @@
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+.nx/
+coverage/
+*.tsbuildinfo
+
+# Python (uv)
+.venv/
+
+# env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+out-tsc/

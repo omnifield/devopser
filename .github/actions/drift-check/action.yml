@@ -1,0 +1,11 @@
+# Composite action: сверка вендоренных skeleton-копий репо с эталоном devopser
+# (repo-skeleton D3). Эталон приезжает вместе с репо action'а при его резолве —
+# токены/checkout devopser'а не нужны (GITHUB_TOKEN caller'а devopser читать не может).
+name: skeleton drift-check
+description: Сверка вендоренных skeleton-копий с эталоном devopser; красный при дрейфе, синк — явной командой init.mjs
+
+runs:
+  using: composite
+  steps:
+    - run: node "$GITHUB_ACTION_PATH/../../../packages/skeleton/init.mjs" --check .
+      shell: bash

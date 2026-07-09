@@ -16,3 +16,29 @@ Thumbs.db
 # Claude Code runtime (harness state — hooks/settings ARE tracked)
 .claude/.main-session-id
 .claude/settings.local.json
+
+# >>> omnifield-skeleton (managed by devopser; синк: init.mjs, не редактировать руками) >>>
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+.nx/
+coverage/
+*.tsbuildinfo
+
+# Python (uv)
+.venv/
+
+# env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+out-tsc/
+# <<< omnifield-skeleton <<<

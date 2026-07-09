@@ -1,0 +1,17 @@
+{
+  "name": "@omnifield/biome-preset",
+  "version": "0.1.0",
+  "description": "Omnifield biome-пресет уровня экосистемы для продукт-репо (briefs/repo-skeleton-product.md D2); weber-фреймворк издаёт свой — не конфликтует",
+  "files": [
+    "biome.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnifield/devopser.git",
+    "directory": "packages/biome-preset"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  }
+}

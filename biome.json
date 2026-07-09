@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": ["@omnifield/biome-preset/biome.json"],
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/.venv",
+      "!**/.vite",
+      "!**/.nx",
+      "!**/out-tsc",
+      "!**/coverage",
+      "!**/.claude",
+      "!**/pnpm-lock.yaml"
+    ]
+  }
+}

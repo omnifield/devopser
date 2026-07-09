@@ -16,10 +16,10 @@ on:
   workflow_call:
     inputs:
       drift-check:
-        description: 'Сверка вендоренных skeleton-копий с эталоном devopser (D3; пока не реализовано)'
+        description: 'Сверка вендоренных skeleton-копий с эталоном devopser (D3); выключать только на переходный период'
         type: boolean
         required: false
-        default: false
+        default: true
 
 jobs:
   node:
@@ -35,12 +35,20 @@ jobs:
         with:
           node-version-file: package.json
           cache: pnpm
+          # user-level .npmrc с токеном под @omnifield-пакеты (GitHub Packages).
+          registry-url: https://npm.pkg.github.com
+          scope: '@omnifield'
       - run: pnpm install --frozen-lockfile
+        env:
+          # Чтение @omnifield-пакетов; пакету devopser нужен grant на репо-вызыватель
+          # (Package settings → Manage Actions access) — см. README.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Монорепо-гигиена: рассинхрон версий deps между пакетами.
       - run: pnpm sherif
       - uses: nrwl/nx-set-shas@v4
       - run: pnpm nx affected -t lint,typecheck,test,build
-      # Точка расширения D3 (init/drift) — input зарезервирован, контракт
-      # caller'ов при появлении шага не изменится.
-      - if: ${{ inputs.drift-check }}
-        run: echo "::warning::drift-check заказан, но ещё не реализован (repo-skeleton D3)"
+      # D3: дрейф вендоренных skeleton-копий виден сразу (красный);
+      # синк — явной командой init.mjs, не молча.
+      - name: skeleton drift-check
+        if: ${{ inputs.drift-check }}
+        uses: omnifield/devopser/.github/actions/drift-check@main
