@@ -1,0 +1,46 @@
+# Reusable CI для node-репо экосистемы (repo-skeleton D1, briefs/repo-skeleton-product.md).
+# Потребитель держит ~5-строчный caller:
+#   uses: omnifield/devopser/.github/workflows/node-ci.yml@main
+# Сниппеты caller'ов и грабли — README.md рядом.
+#
+# Версии тулчейна — ТОЛЬКО из пинов репо-вызывателя (канон toolchain-pins):
+#   pnpm — packageManager в package.json (pnpm/action-setup без version);
+#   node — engines.node в package.json (node-version-file, диапазон ок).
+#
+# permissions задаёт CALLER — reusable не может расширить права сам:
+#   contents: read, actions: read; без actions:read nx-set-shas падает
+#   «Resource not accessible by integration» (грабля weber, 2026-07-09).
+name: Node CI (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      drift-check:
+        description: 'Сверка вендоренных skeleton-копий с эталоном devopser (D3; пока не реализовано)'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  node:
+    name: Node (hygiene + nx affected lint/typecheck/test/build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # nx affected диффится от базы — нужна полная история.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Монорепо-гигиена: рассинхрон версий deps между пакетами.
+      - run: pnpm sherif
+      - uses: nrwl/nx-set-shas@v4
+      - run: pnpm nx affected -t lint,typecheck,test,build
+      # Точка расширения D3 (init/drift) — input зарезервирован, контракт
+      # caller'ов при появлении шага не изменится.
+      - if: ${{ inputs.drift-check }}
+        run: echo "::warning::drift-check заказан, но ещё не реализован (repo-skeleton D3)"
