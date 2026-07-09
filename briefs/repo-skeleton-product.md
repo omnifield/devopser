@@ -121,3 +121,36 @@ observability / gateway / storage-minio / registry-доки). Для D2 (publish
 списка — верно).
 
 Свежий референс для D1: weber CI зелёный на `main` (sherif-шаг + permissions-фикс уже там).
+
+---
+
+## 🔍 Ревью оракул-архитектора (2026-07-09, по факту D1–D3+release)
+
+**Вердикт: ✅ АПРУВ.** Качество высокое, все зафиксированные грабли учтены (permissions
+в caller-сниппете, Actions→Access включён через api, bootstrap-fallback в husky-эталоне,
+nx-set-shas fresh-repo замечен). Отдельно отмечаю правильные суждения: devopser сам на
+своём скелете (догфуд); nx/biome — шаблоны, НЕ drift-managed (репо легитимно расширяет);
+extension-point `.husky/pre-commit.local`; zero-deps init.mjs; rollback-story в
+consumer-брифах.
+
+### Ф1 (единственная содержательная): pre-push выпал из managed-набора
+
+`files/` содержит только `husky-pre-commit`. Канон commit-каденса двухгейтовый:
+pre-commit (lint+typecheck) **и pre-push (affected test+build — «не пушим сломанное»)**;
+pre-push есть и в brainer, и в weber. Без него в managed-наборе: (а) новый репо через
+init.mjs рождается без второго гейта; (б) существующие pre-push снова дрейфуют по репо —
+ровно болезнь, которую D3 лечит. **Предложение:** `files/husky-pre-push` (эталон weber:
+bootstrap-fallback + affected test,build) + extension-point `.husky/pre-push.local`
+(симметрично pre-commit; у brainer туда уедет `test:py`); consumer-брифы дополнить шагом.
+
+### Заметки (не блокеры)
+
+- `release.yml` ручной bump версий — ок для 3 пакетов; при росте — `nx release` (в репо).
+- `node-ci` жёстко пишет scope `@omnifield` в setup-node — для продукт-репо достаточно;
+  publish-флоу `@weber/*` (когда фреймворк дозреет до публикаций) — отдельная история
+  внутри weber, node-ci не трогает.
+- consumer-brainer: python-линия решена правильно (локальный job, reusable python-ci —
+  needs-driven при втором потребителе; merge-check пресета со СТОП-эскалацией — образцово).
+
+**После Ф1-фикса:** brainer репетирует пересадку по своему брифу → находки дольются в
+consumer-weber → weber пересаживаю я.
