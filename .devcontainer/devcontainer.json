@@ -1,0 +1,7 @@
+{
+  "name": "omnifield-devbox",
+  "image": "ghcr.io/omnifield/devbox:v2026.07.10",
+  "remoteUser": "vscode",
+  "mounts": ["source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume"],
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.local/share/pnpm/store && pnpm install"
+}

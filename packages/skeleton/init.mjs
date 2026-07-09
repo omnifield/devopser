@@ -34,6 +34,7 @@ const TEMPLATES = [
   { src: "nx-template.json", dest: "nx.json" },
   { src: "biome-template.json", dest: "biome.json" },
   { src: "dependabot-template.yml", dest: ".github/dependabot.yml" },
+  { src: "devcontainer-template.json", dest: ".devcontainer/devcontainer.json" },
 ];
 
 const BLOCK_START =
