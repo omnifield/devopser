@@ -18,6 +18,10 @@ on:
           chore
           build
           ci
+          test
+          perf
+          style
+          revert
 
 jobs:
   semantic:
@@ -29,3 +33,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           types: ${{ inputs.types }}
+          requireScope: false
+          # Канон экосистемы (из brainer): subject с маленькой буквы —
+          # "feat(backend): add x", не "Add x".
+          subjectPattern: ^[a-z].+$
+          subjectPatternError: |
+            The PR title subject "{subject}" must start with a lowercase letter.
+            Example: "feat(backend): add session stop" (not "Add session stop").

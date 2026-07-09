@@ -65,9 +65,17 @@ verify-таблице = OUTDATED (не умеет сам исполнять `pac
 1. **git auth**: `git config --global user.name/user.email` + credential
    (первый push спросит через Git Credential Manager — идёт с Git.Git).
 2. **claude login**: `claude` → `/login` (браузерный OAuth).
-3. **Docker Desktop first-run**: запустить один раз GUI — принять лицензию,
+3. **GitHub Packages auth** (@omnifield-пакеты: пресеты/скелет devopser'а):
+   PAT (classic) со scope `read:packages` → в user-level `~/.npmrc`:
+   ```
+   //npm.pkg.github.com/:_authToken=<PAT>
+   ```
+   Без этого `pnpm install` в репо с `@omnifield/*`-deps упадёт 401. Маппинг
+   scope→registry уже вендорен в `.npmrc` каждого репо (skeleton-набор), токен —
+   только user-level, в репо не коммитить.
+4. **Docker Desktop first-run**: запустить один раз GUI — принять лицензию,
    дождаться WSL2-инициализации. До этого `docker compose` не работает.
-4. Клон репо → [repos.md](repos.md).
+5. Клон репо → [repos.md](repos.md).
 
 ## Troubleshooting
 

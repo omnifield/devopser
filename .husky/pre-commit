@@ -25,3 +25,9 @@ $CMD || {
   echo ""
   exit 1
 }
+
+# Репо-специфичное расширение гейта (НЕ drift-managed, пример: lint:py brainer).
+if [ -f .husky/pre-commit.local ]; then
+  echo "[pre-commit] repo-local гейт (.husky/pre-commit.local)…"
+  . .husky/pre-commit.local || exit 1
+fi

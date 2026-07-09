@@ -1,6 +1,6 @@
 {
   "name": "@omnifield/nx-preset",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Omnifield nx-пресет: базовые targetDefaults + namedInputs продукт-репо (briefs/repo-skeleton-product.md D2)",
   "files": [
     "nx.json"
