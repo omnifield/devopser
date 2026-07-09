@@ -1,0 +1,29 @@
+# Publish @omnifield/* → GitHub Packages. Запуск руками (workflow_dispatch):
+#   gh workflow run release.yml
+# GITHUB_TOKEN c packages:write публикует пакеты своего репо — PAT не нужен.
+# Версии — в package.json пакетов; уже опубликованная версия = ошибка (бампни).
+name: Release packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          registry-url: https://npm.pkg.github.com
+          scope: '@omnifield'
+      - run: pnpm install --frozen-lockfile
+      # -r обходит packages/*, private-корень пропускается; workspace:* → версии.
+      - run: pnpm -r publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
