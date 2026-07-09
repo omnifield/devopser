@@ -70,7 +70,10 @@ jobs:
 
 - `.gitignore` — managed-блок дозаписью; ваши строки, продублированные блоком
   (python-кэши, .venv, node, OS, .claude runtime — всё уже в блоке), убрать
-  выше блока руками (одноразовая чистка).
+  выше блока руками (одноразовая чистка);
+- `.github/dependabot.yml` — появится из шаблона (npm grouped + github-actions,
+  weekly). ⚠️ Добавьте себе `package-ecosystem: uv` (python-deps) — шаблон
+  не drift-managed, расширение легитимно.
 
 Drift-check в reusable CI включён по умолчанию — синк обязан быть в этом же PR.
 
