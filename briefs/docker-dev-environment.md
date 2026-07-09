@@ -105,3 +105,11 @@ docker/build-push-action → GHCR public, теги выше. GITHUB_TOKEN с `pa
 Агент-сессии из контейнера (констрейнт 4): CLAUDE_CONFIG_DIR, git-креды
 (проброс gh-auth), localhost-порты — прогоню на себе, находки сюда, спорное
 про оркестрацию — brainer-архитектору.
+
+### ✅ Исполнено (2026-07-10) + отклонение по обкатчику
+
+D1+D2 готовы: образ `ghcr.io/omnifield/devbox:v2026.07.10` опубликован (локальная
+сборка поймала: vendor-скрипт pnpm не работает в docker — заменён прямым тарболом),
+`.devcontainer/` — init-шаблон в skeleton 0.2.0, devopser сам на нём. **Первый
+обкатчик — brainer, не weber (решение user)**: жирнейший кейс node+python+агент-сессии —
+бриф `devbox-test-brainer.md`. DoD-прогон на чистой тачке — user, после теста brainer.
