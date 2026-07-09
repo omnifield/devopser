@@ -59,3 +59,49 @@ brainer-backend (python, сейчас `uv run uvicorn` на хосте) — пр
 
 D1 (+D2 если образ) → DoD-прогон на weber → D3 паттерн (по заказу brainer) → D4.
 Blueprint выбора механизма D1 — показ user до исполнения. Находки — комментарием сюда.
+
+---
+
+## 📐 Blueprint D1 (devopser-architect, 2026-07-10) — на утверждение user
+
+### Механизм: ЕДИНЫЙ БАЗОВЫЙ ОБРАЗ (не devcontainer-features)
+
+По трём критериям брифа:
+
+| Критерий | Образ (GHCR) | Features |
+|---|---|---|
+| Первый старт | pull готового слоя, минуты | сборка на КАЖДОЙ машине: 10–20+ мин, сеть |
+| Офлайн-повторяемость | пин тегом/digest — байт-в-байт везде | тянут сеть при ребилде, дрейфуют по машинам |
+| Поддержка | Dockerfile ~40 строк, ребилд по dispatch | ниже, но community-features для uv/claude — чужое качество |
+
+Features выигрывают только по стоимости поддержки — cattle-канон (повторяемость)
+перевешивает. Паттерн публикации 1:1 с npm-пресетами: артефакт devopser, public.
+
+### Состав `ghcr.io/omnifield/devbox`
+
+- База `mcr.microsoft.com/devcontainers/base:ubuntu-24.04` (git, common-utils, user vscode).
+- **Оболочка тулчейна** (версии-исполнители остаются пинам репо, констрейнт 2):
+  node LTS (nodesource) · pnpm ≥10 standalone (сам переключается по `packageManager`) ·
+  uv (vendor installer; CPython качает по `.python-version`) · go stable (toolchain
+  автодокачка по go.mod) · gh CLI · Claude Code (native installer).
+- **Теги**: датированные `vYYYY.MM.DD` + `latest`; шаблон пинит датированный
+  (канон пинов; обновление = PR, dependabot умеет devcontainers-экосистему).
+- **Арх**: amd64 в v1 (парк — win/amd64); arm64 — buildx-расширение при появлении mac.
+
+### Шаблон `.devcontainer/` (skeleton, init-шаблон — НЕ exact-managed, как nx/biome)
+
+`devcontainer.json`: image по пину + **named volume на pnpm store** (общий между
+репо — Windows-перф, констрейнт 3) + `postCreateCommand: pnpm install`.
+node_modules на bind в v1 не трогаем: pnpm со store-volume снимает основную боль,
+замер — на DoD-прогоне; в README — рекомендация «клон в WSL2 fs» для Windows.
+
+### D2 — publish-флоу образа
+
+`.github/workflows/release-devbox.yml` (dispatch, как release.yml):
+docker/build-push-action → GHCR public, теги выше. GITHUB_TOKEN с `packages: write`.
+
+### Открытое (проверяется на DoD-прогоне, не решается молча)
+
+Агент-сессии из контейнера (констрейнт 4): CLAUDE_CONFIG_DIR, git-креды
+(проброс gh-auth), localhost-порты — прогоню на себе, находки сюда, спорное
+про оркестрацию — brainer-архитектору.
