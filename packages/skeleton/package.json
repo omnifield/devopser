@@ -1,6 +1,6 @@
 {
   "name": "@omnifield/skeleton",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Omnifield repo-skeleton: эталон вендоренных файлов + init/sync/drift-check (briefs/repo-skeleton-product.md D3)",
   "type": "module",
   "files": [

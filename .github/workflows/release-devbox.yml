@@ -1,10 +1,18 @@
 # Publish devbox-образа → GHCR (briefs/docker-dev-environment.md D2).
-# Запуск руками: gh workflow run release-devbox.yml
-# Теги: датированный vYYYY.MM.DD (его пинят .devcontainer репо) + latest.
+# Запуск руками: gh workflow run release-devbox.yml [-f tag=vYYYY.MM.DD]
+# Теги: датированный vYYYY.MM.DD + latest. Без input'а — UTC-дата раннера;
+# ⚠️ пин в devcontainer-шаблоне ОБЯЗАН совпадать с фактически изданным тегом
+# (грабля Д1 фидбека brainer: локальная дата ≠ UTC → пин на несуществующий тег).
 name: Release devbox image
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Явный тег (vYYYY.MM.DD); пусто = UTC-дата раннера'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -22,7 +30,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: tag
-        run: echo "value=v$(date +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${{ inputs.tag }}"
+          echo "value=${TAG:-v$(date -u +%Y.%m.%d)}" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: devbox

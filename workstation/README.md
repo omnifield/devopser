@@ -77,6 +77,12 @@ verify-таблице = OUTDATED (не умеет сам исполнять `pac
    в npm-warning'е терминала → пришлось ревокать. Токен — только user-level,
    в репо не коммитить (repo-`.npmrc` из skeleton-набора содержит только
    scope-маппинг, без токена).
+   Если в `~/.npmrc` уже живут токены других реестров — нужна именно ЭТА пара строк
+   (Д5 фидбека devbox); живость токена проверяется до install:
+   ```
+   curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token <PAT>" https://api.github.com/user
+   ```
+   (`200` — жив, `401` — дохлый/не тот).
 4. **Docker Desktop first-run**: запустить один раз GUI — принять лицензию,
    дождаться WSL2-инициализации. До этого `docker compose` не работает.
 5. Клон репо → [repos.md](repos.md).
