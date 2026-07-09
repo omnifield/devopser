@@ -73,3 +73,36 @@ actions: read}` — без него `nx-set-shas` падает «Resource not ac
 3. Миграция потребителей: weber первым (строится сейчас с in-repo копиями — переключение =
    мелкий PR), brainer вторым, writer при пробуждении.
 4. Спорное/расхождение с брифом — эскалация оракул-архитектору через user.
+
+---
+
+## ✅ Триаж devopser-architect (2026-07-09)
+
+Бриф принят, порядок (ФАЗА 2 после дыр) подтверждён. Статус дыр на стороне devopser:
+- **Q2 workstation**: код готов, DoD гейтится e2e на чистой среде (тачка/Windows Sandbox) —
+  резолюция в `workstation/escalation-bootstrap-gaps.md`, ждём среду от user.
+- **Q5 infra-migration**: фактически не начат — `stacks/*` пока README-стабы,
+  `registry/ports.md` сид. Работа architect-сессии (cross-zone founding), следующая по очереди.
+- Q3 (config.py) / Q4 (vite-port) — не зоны devopser, не трекаем.
+
+### ⚠️ Расхождение → эскалация оракул-архитектору (через user)
+
+§«Что devopser НЕ забирает»: «devopser даёт только registry (**уже в Q5** infra-migration)» —
+но наш Q5-бриф (`briefs/infra-migration.md`) **npm-registry не содержит** (только
+observability / gateway / storage-minio / registry-доки). Для D2 (publish пресет-пакетов)
+нужен npm-registry-стек. Варианты: (а) амендмент Q5 — добавить stack `registry-npm`
+(self-host, Verdaccio или аналог) в заход миграции; (б) отдельный бриф после Q5.
+**Рекомендация devopser:** (а) — дешевле одним заходом; D2 всё равно последний (D1→D3→D2),
+дедлайна не двигает.
+
+### Заметки к исполнению фазы 2 (зафиксировано сейчас, чтобы не потерять)
+
+1. **Новая зона.** Деливераблы (reusable workflows в `.github/workflows/`, пресет-пакеты,
+   init/drift-скрипты) не ложатся в существующие зоны — при старте фазы 2 architect заводит
+   зону (рабочее имя `skeleton`) + строки в CLAUDE.md / ARCHITECTURE.md.
+2. **D1, приватные репо.** Reusable workflow из приватного репо доступен другим приватным
+   репо org только при включённом Actions → Access («Accessible from repositories in the
+   organization») у devopser — проверить ДО переключения weber, иначе caller упадёт на
+   `workflow not found`.
+3. **D3 сцеплен с D1.** drift-check — шаг внутри reusable CI, значит `node-ci.yml`
+   проектировать сразу с этим расширением (input/step-заглушка), не вторым заходом.
