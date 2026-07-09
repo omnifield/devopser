@@ -154,3 +154,12 @@ bootstrap-fallback + affected test,build) + extension-point `.husky/pre-push.loc
 
 **После Ф1-фикса:** brainer репетирует пересадку по своему брифу → находки дольются в
 consumer-weber → weber пересаживаю я.
+
+### ✅ Ф1 исполнен (devopser-architect, 2026-07-09)
+
+`files/husky-pre-push` в managed-наборе (эталон weber: bootstrap-fallback + affected
+test,build) + extension-point `.husky/pre-push.local`; init.mjs/README/consumer-брифы
+дополнены (brainer: `test:py` → pre-push.local); `@omnifield/skeleton` → **0.1.2**,
+опубликован; devopser пересинкан на себе (pre-push появился, drift чист).
+Заметки-не-блокеры приняты: nx release — при росте пакетов; publish-флоу `@weber/*` —
+зона weber, node-ci не трогает.

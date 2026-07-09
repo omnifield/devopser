@@ -20,7 +20,7 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 
 | Файл | Режим |
 |---|---|
-| `.editorconfig` · `.gitattributes` · `.npmrc` · `.husky/pre-commit` | точная копия эталона |
+| `.editorconfig` · `.gitattributes` · `.npmrc` · `.husky/pre-commit` · `.husky/pre-push` | точная копия эталона |
 | `.gitignore` | managed-блок между маркерами `>>> omnifield-skeleton` — ниже блока репо дописывает своё |
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
@@ -31,7 +31,9 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 ## Канон
 
 - Дрейф виден сразу (красный CI), синк — только явной командой, не молча.
-- Husky pre-commit содержит bootstrap-fallback: нет `origin/main` (первый пуш) →
-  `nx run-many` вместо `nx affected` (грабля обкатана в weber).
+- Husky-гейты двухступенчатые (канон commit-каденса): pre-commit = sherif + lint/typecheck,
+  pre-push = test/build («не пушим сломанное»). Оба с bootstrap-fallback: нет `origin/main`
+  (первый пуш) → `nx run-many` вместо `nx affected` (грабля обкатана в weber). Репо-специфика —
+  в `.husky/pre-commit.local` / `.husky/pre-push.local` (не drift-managed).
 - Обновление эталона = изменение контракта потребителей → через architect,
   потребители синкаются явно (у них покраснеет drift-check — это by design).

@@ -26,6 +26,7 @@ const MANAGED = [
   { src: "gitattributes", dest: ".gitattributes" },
   { src: "npmrc", dest: ".npmrc" },
   { src: "husky-pre-commit", dest: ".husky/pre-commit" },
+  { src: "husky-pre-push", dest: ".husky/pre-push" },
 ];
 
 const TEMPLATES = [
