@@ -66,13 +66,17 @@ verify-таблице = OUTDATED (не умеет сам исполнять `pac
    (первый push спросит через Git Credential Manager — идёт с Git.Git).
 2. **claude login**: `claude` → `/login` (браузерный OAuth).
 3. **GitHub Packages auth** (@omnifield-пакеты: пресеты/скелет devopser'а):
-   PAT (classic) со scope `read:packages` → в user-level `~/.npmrc`:
+   PAT (classic) со scope `read:packages` нужен даже для ПУБЛИЧНЫХ пакетов —
+   специфика npm-реестра GH Packages. В user-level `~/.npmrc` ровно так
+   (копипастный образец, токен — на место `<PAT>` ЦЕЛИКОМ строки после `=`):
    ```
-   //npm.pkg.github.com/:_authToken=<PAT>
+   @omnifield:registry=https://npm.pkg.github.com
+   //npm.pkg.github.com/:_authToken=<PAT c read:packages>
    ```
-   Без этого `pnpm install` в репо с `@omnifield/*`-deps упадёт 401. Маппинг
-   scope→registry уже вендорен в `.npmrc` каждого репо (skeleton-набор), токен —
-   только user-level, в репо не коммитить.
+   ⚠️ Инцидент 2026-07-09: токен, вписанный не на своё место, дал 401 и засветился
+   в npm-warning'е терминала → пришлось ревокать. Токен — только user-level,
+   в репо не коммитить (repo-`.npmrc` из skeleton-набора содержит только
+   scope-маппинг, без токена).
 4. **Docker Desktop first-run**: запустить один раз GUI — принять лицензию,
    дождаться WSL2-инициализации. До этого `docker compose` не работает.
 5. Клон репо → [repos.md](repos.md).

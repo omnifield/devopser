@@ -16,9 +16,10 @@ devopser `briefs/repo-skeleton-product.md`.
 
 ## Преднастройка (вне PR, координирует user/devopser)
 
-- **Actions-доступ к пакетам**: GH → каждый из 3 пакетов → Package settings →
-  Manage Actions access → добавить `omnifield/brainer` (иначе `pnpm install` в CI = 401).
-- **Локальный install**: PAT `read:packages` в user-level `~/.npmrc` —
+- ~~Actions-доступ к пакетам (grant)~~ — снято: пакеты публичны (решение user
+  2026-07-09), CI читает любым `GITHUB_TOKEN`.
+- **Локальный install**: PAT `read:packages` в user-level `~/.npmrc` — нужен и для
+  публичных (специфика GH Packages); копипастный образец —
   devopser `workstation/README.md` §Пост-шаги п.3.
 
 ## Порядок — один PR, коммиты по шагам

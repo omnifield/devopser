@@ -23,6 +23,8 @@ node_modules/
 dist/
 .vite/
 *.local
+# *.local — vite env; extension-point'ы эталонных хуков НЕ глотать (feedback brainer П1)
+!.husky/*.local
 .nx/
 coverage/
 *.tsbuildinfo
