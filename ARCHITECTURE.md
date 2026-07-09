@@ -1,61 +1,53 @@
 # Architecture — Omnifield Devopser
 
-Repo-local north star. Родственные решения — оракул `egor6-66/capsuleTech`
-(ADR 068 gateway, 071/072 storage/containerize, `docs/_meta/migration/infra.md` — аудит,
-из которого этот репо выведен). Дисциплина/канон — `omnifield/commons/standards/`.
+Repo-local north star. Дисциплина/канон — `omnifield/commons/standards/`. История решений —
+`briefs/` (включая снятые: `infra-migration.md` ⛔).
 
 ## Что это
 
-Продукт эксплуатации инфраструктуры: **поднимать / мониторить / маршрутизировать / деплоить**
-продукты Omnifield. Devopser обслуживает все продукты экосистемы (включая себя) — мы юзер №0.
-Это НЕ «папка docker в каждом репо»: инфра, нужная второму продукту без изменений, живёт здесь
-централизованно. Продукт-репо не содержат runtime-инфры — только свой код и CI.
+Продукт эксплуатации экосистемы Omnifield: **скелет репо (пресеты + reusable CI + init/drift),
+provisioning машин, реестр контрактов** — и runtime-инфра строго под заказ потребителя.
+Devopser обслуживает все продукты экосистемы (включая себя) — мы юзер №0.
 
-## Ключевая абстракция — **stack-as-capability** (тот же шов, что brainer/writer)
+## Главный флоу (ревизия user 2026-07-09 — needs-driven)
 
-- **Capability** — контракт инфра-стека: `up / down / status / configure`.
-- **Provider** — где стек исполняется:
-  - `local-docker` — docker compose на dev-хосте. **MVP: только он.**
-  - `vps` / `cloud` — удалённые среды. Позже, extension по готовому шву.
-- **Registry** — декларативная карта: какие продукты, какие порты, какие маршруты gateway.
+Готовим devopser как поставщика → сажаем потребителей (weber первым, brainer, writer):
 
-**MVP-честность:** на фазе 0 шов — в дизайне раскладки (stack = самодостаточная директория
-с compose + конфигами), НЕ в коде. Код-шов (control-plane API над стеками) — фаза
-продуктизации, contract-first, как в brainer.
+1. **workstation** — новая машина одной идемпотентной командой (базовый слой из 6 тулзов;
+   остальное самособирается из пинов репо).
+2. **repo-skeleton** (`briefs/repo-skeleton-product.md`, порядок D1 → D3 → D2):
+   reusable CI → init-материализация + drift-check → пресет-пакеты `@omnifield/*`
+   (исходники в `packages/`, publish — GitHub Packages; решение user 2026-07-09).
+3. Потребители переключаются с in-repo копий мелкими PR.
+
+**Граница P0:** репо зависят ТОЛЬКО от опубликованных артефактов devopser (workflow-ref,
+npm-пакеты, вендоренные копии с drift-check) — НИКОГДА от живого devopser-сервиса.
+Любой репо: clone → install → работает.
 
 ## Раскладка
 
-| Зона | Что | Происхождение |
-|---|---|---|
-| `stacks/gateway/` | nginx single-origin :8080, path-роутинг на `host.docker.internal:<port>`, тупой/stateless | оракул `docker/gateway/` |
-| `stacks/observability/` | OTEL collector :4317 → Loki :3100 + Prometheus :9090 → Grafana :3333 (дашборд Agent Fleet) | оракул `docker/observability/` (БЕЗ `.claude/` — см. брифы) |
-| `stacks/storage/` | minio (S3-совместимый) | оракул (ADR 071/072) |
-| `registry/` | ports.md + products.md — единый source of truth портов/продуктов/маршрутов | консолидация из DEPLOY.md продуктов |
-| `workstation/` | provisioning dev-машины: bootstrap базового слоя (git/node/uv/docker/claude) + карта репо | greenfield (инцидент 2026-07-08) |
-| `packages/` | (позже) control-plane backend/frontend при продуктизации | фаза 1+ |
+| Зона | Что |
+|---|---|
+| `packages/` + `.github/workflows/` | зона `skeleton` — пресеты, reusable CI, init/drift |
+| `registry/` | порты/продукты/маршруты — source of truth контрактов экосистемы |
+| `workstation/` | bootstrap dev-машины + карта репо |
+| `briefs/` | брифы architect → owner + история решений |
 
-**Принцип стека:** каждый stack самодостаточен — `docker compose up -d` из его директории
-поднимает его целиком. Стеки не знают друг о друге; связь (какой продукт куда проксируется) —
-только через `registry/`.
+## Runtime-стеки — только под заказ
 
-## Существующий субстрат (переиспользуем, не greenfield)
+**stack-as-capability** остаётся швом на будущее: стек = самодостаточная директория
+(compose + конфиги), `up / down / status`, стеки не знают друг о друге, связи — через
+`registry/`. Но стек появляется ТОЛЬКО под точечный заказ продукта-потребителя с его
+контрактом — «перенос из капсулы потому что было» отменён как класс работ
+(ревизия 2026-07-09). Паттерн «апы/бэки на ХОСТЕ, контейнеры — тонкая инфра» —
+обязателен для агент-продуктов, наследуется любым будущим стеком.
 
-- Оракул `capsule/docker/` — **живой** и в проде dev-флоу: brainer backend читает
-  Loki :3100 / Prometheus :9090, инжектит OTEL на :4317; сессии Claude мониторятся через
-  Grafana :3333. → миграция **copy-first**: devopser становится source of truth, оракул
-  продолжает крутить своё до явного переключения. Порты 1:1, потребители не замечают.
-- Паттерн «апы/бэки на ХОСТЕ, контейнеры — только тонкая инфра» (brainer `DEPLOY.md`) —
-  обязателен для агент-продуктов (спавн claude-процессов = хостовое). Devopser его наследует.
+**Интерим:** телеметрия агент-сессий и gateway живут в оракуле (`capsule/docker/`,
+Loki :3100 / Prometheus :9090 / OTEL :4317 / Grafana :3333) до заказа от brainer —
+агент-наблюдаемость в v2 = продукт brainer, не Grafana-обвязка.
 
-## Фазы
+## Границы (не строим)
 
-- **Фаза 0 (MVP):** миграция стеков + registry (`briefs/infra-migration.md`) + workstation-bootstrap
-  (`briefs/workstation-bootstrap.md` — capability `workstation`: provision/verify машины,
-  provider `windows-winget`; macOS/linux — extension по шву).
-- **Фаза 1:** control-plane (contract-first: список стеков / статус / up-down через API+UI).
-- **Дальше:** провайдеры `vps`/`cloud`, деплой-пайплайны продуктов, entitlement для внешних юзеров.
-
-## Границы (не строим сейчас)
-
-Control-plane API/UI, cloud-провайдеры, CI/CD-раннеры, secrets-management, auth, биллинг.
-Всё — фазами по готовому шву.
+Control-plane API/UI, cloud/VPS-провайдеры, CI/CD-раннеры, secrets-management, auth,
+биллинг · agent-харнесс и телеметрия агентов — **brainer** · release-механика — `nx release`
+в репо-потребителях · доки/KB — knowledger.

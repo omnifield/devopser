@@ -6,9 +6,9 @@
 // scope = leaf-имя зоны (либо 'main' = architect). Зоны devopser (stacks/<name>/, registry/).
 
 export const ZONES = {
-  gateway: { relativePath: 'stacks/gateway', name: 'gateway — nginx single-origin, path-routing to host products' },
-  observability: { relativePath: 'stacks/observability', name: 'observability — OTEL collector + Loki + Prometheus + Grafana' },
-  storage: { relativePath: 'stacks/storage', name: 'storage — minio (S3-compatible)' },
+  // Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-driven,
+  // devops-consolidated-backlog.md v2): зона стека появляется только под заказ потребителя.
+  skeleton: { relativePath: 'packages', name: 'skeleton — repo-skeleton product: presets (packages/) + reusable CI (.github/workflows/) + init/drift' },
   registry: { relativePath: 'registry', name: 'registry — ports / products / routes source of truth' },
   workstation: { relativePath: 'workstation', name: 'workstation — dev-machine provisioning (bootstrap base toolchain + repo map)' },
 };

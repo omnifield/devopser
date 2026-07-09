@@ -3,20 +3,24 @@
 Единый реестр портов dev-хоста экосистемы Omnifield. Изменение порта = контракт
 (потребители зависят) — только через architect + запись здесь.
 
-> Статус: **сид** (собран из brainer/DEPLOY.md + compose оракула, 2026-07-08).
-> Актуализируется в founding-миграции (`briefs/infra-migration.md`).
+> Статус: **сид** (собран из brainer/DEPLOY.md + compose оракула, 2026-07-08; перелейблен
+> 2026-07-09 — миграция стеков снята, needs-driven).
 
-## Инфра (стеки devopser)
+## Инфра (владелец — оракул `capsule/docker/`, интерим до v2-заказов)
 
-| Порт | Что | Стек |
+Стеки крутит капсула; порты зарезервированы здесь от коллизий, т.к. на них сидят
+живые потребители (brainer backend, claude-scope-сессии). Devopser-стек на этих портах
+появится только под заказ потребителя (тогда — новый контракт, запись обновится).
+
+| Порт | Что | Где живёт |
 |---|---|---|
-| 8080 | gateway nginx (single-origin) | `stacks/gateway` |
-| 4317 | OTEL collector gRPC (сюда эмитят claude-сессии) | `stacks/observability` |
-| 4318 | OTEL collector HTTP | `stacks/observability` |
-| 3100 | Loki (читает brainer backend) | `stacks/observability` |
-| 9090 | Prometheus (читает brainer backend) | `stacks/observability` |
-| 3333 | Grafana (дашборд Agent Fleet) | `stacks/observability` |
-| 9000 / 9001 | minio API / console | `stacks/storage` |
+| 8080 | gateway nginx (single-origin) | `capsule/docker/gateway` |
+| 4317 | OTEL collector gRPC (сюда эмитят claude-сессии) | `capsule/docker/observability` |
+| 4318 | OTEL collector HTTP | `capsule/docker/observability` |
+| 3100 | Loki host-порт (читает brainer backend; capsule PR #478) | `capsule/docker/observability` |
+| 9090 | Prometheus (читает brainer backend) | `capsule/docker/observability` |
+| 3333 | Grafana (дашборд Agent Fleet) | `capsule/docker/observability` |
+| 9000 / 9001 | minio API / console | `capsule/docker/gateway` (compose там же) |
 
 ## Продукты (хост)
 
@@ -27,5 +31,7 @@
 
 ## Занято оракулом (capsule, до переключения)
 
-3000 / 3050 / 3200 / 3400 · 8001–8007 (бэки капсулы). Уточнить карту при миграции —
-сейчас перечень из brainer/DEPLOY.md («свободны относительно занятых»).
+3000 / 3050 / 3200 / 3400 · 8001–8007 (бэки капсулы) · 4873 (verdaccio оракула, эфемерный
+`nx local-registry`). Перечень из brainer/DEPLOY.md + compose/nginx капсулы
+(«свободны относительно занятых»). ⚠️ Известная коллизия капсулы: :3100 — и Loki host-порт,
+и learn-фронт в её nginx — проблема капсулы, к нам не тащить.

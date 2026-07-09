@@ -113,3 +113,17 @@ host-порт в main капсулы, PR #478 · Prometheus :9090 · OTEL :4317 
 Actions → Access у devopser ДО переключения weber · drift-check (D3) закладывать
 в `node-ci.yml` сразу · +новое: проверить `nx-set-shas` на свежем репо без истории
 main — та же грабля, что husky bootstrap-fallback, только в CI.
+
+---
+
+## ✅ Резолюция user (2026-07-09)
+
+1. **Publish-target пресетов — GitHub Packages** (вариант «а» принят): «это должно быть
+   общим». Исходники пресетов — зона devopser (`packages/`), GH Packages — только склад
+   опубликованных артефактов. П.3 бэклога растворён внутрь D2, отдельного стека нет.
+2. **Чистка репо одобрена** («чужое не тащим») — выполнена: зоны стеков и стабы `stacks/*`
+   убраны (CLAUDE.md / ARCHITECTURE.md / scope-resolve / claude-scope), `ports.md`
+   перелейблен (владелец интерим-инфры — капсула), `repos.md` — честный интерим.
+   Заведена зона `skeleton` (`packages/` + `.github/workflows/`).
+3. **Флоу подтверждён:** готовим devopser как поставщика → сажаем brainer и weber
+   на devopser. Следующий шаг — blueprint reusable CI (показ user до исполнения).

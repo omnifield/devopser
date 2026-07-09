@@ -32,12 +32,10 @@ projects/new/
 
 Порядок имеет значение (observability нужен brainer-backend'у):
 
-1. **devopser — стеки** (когда мигрированы по `briefs/infra-migration.md`;
-   до того — стеки крутит оракул `capsuleTech/docker/`):
-   ```powershell
-   cd omnifield\devopser\stacks\observability; docker compose up -d
-   cd ..\gateway; docker compose up -d
-   ```
+1. **инфра (интерим)** — телеметрию/gateway крутит оракул `capsuleTech/docker/`
+   (команды — в README соответствующих директорий капсулы). Devopser runtime-стеков
+   не держит — стек появляется только под заказ потребителя
+   (`briefs/devops-consolidated-backlog.md` v2).
 2. **brainer**:
    ```powershell
    cd omnifield\brainer\backend;  uv sync        # .python-version -> uv сам качает CPython

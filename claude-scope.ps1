@@ -1,9 +1,7 @@
 # claude-scope.ps1 - launch Claude Code in the devopser repo under a given scope.
 #
 #   .\claude-scope.ps1 -Scope main           # architect (full git)
-#   .\claude-scope.ps1 -Scope gateway        # owner-gateway       -> stacks/gateway/
-#   .\claude-scope.ps1 -Scope observability  # owner-observability -> stacks/observability/
-#   .\claude-scope.ps1 -Scope storage        # owner-storage       -> stacks/storage/
+#   .\claude-scope.ps1 -Scope skeleton       # owner-skeleton      -> packages/ + .github/workflows/
 #   .\claude-scope.ps1 -Scope registry       # owner-registry      -> registry/
 #   .\claude-scope.ps1 -Scope workstation    # owner-workstation   -> workstation/
 #
