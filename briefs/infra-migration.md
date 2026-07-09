@@ -76,3 +76,23 @@ TODO-заметки «порты → devopser/registry» (правки их до
   просто не гоняем оба: на dev-хосте активен один экземпляр стека.
 - Изменение любого порта/маршрута = контракт (POLICY) — не «улучшать заодно».
 - Git: обычный флоу architect'а, коммиты по стекам (observability → gateway → storage → registry).
+
+---
+
+## Амендмент 2026-07-09 (architect, по `devops-consolidated-backlog.md` §2/§4; registry-npm — резолюция оракула в `repo-skeleton-product.md`)
+
+1. **+ стек `stacks/registry-npm/`** — self-hosted npm-registry. Дефолт **Verdaccio**
+   (проверен оракулом, `nx local-registry` поднимает его же); иное — предложение с
+   обоснованием. Потребитель — repo-skeleton D2 (publish пресет-пакетов `@omnifield/*`).
+   Порт: кандидат **4873** (дефолт Verdaccio, по текущей карте свободен) — финально завести
+   в `registry/ports.md` (контракт). Storage-volume gitignored. DoD стека: up с чистого
+   клона + smoke `npm ping --registry` + publish/install dry-run тест-пакета.
+2. **Паттерн под будущие сервис-контейнеры (CC-11 аудита).** Постура канона не меняется
+   (апы/бэки на ХОСТЕ, gateway → `host.docker.internal:<port>`), но при переносе стеков
+   заложить и задокументировать в README стеков конвенцию подключения будущих
+   контейнеризованных бэков (именование сетей/контейнеров `omnifield-*`, порты — только
+   из `registry/ports.md`), чтобы миграция бэков не перекраивала стеки. Dockerfile'ы
+   сервисов — зона владельцев сервисов, сюда не тащить.
+3. Порядок коммитов дополняется: … → storage → **registry-npm** → registry.
+4. Координация: blueprint раскладки стеков — показать user ДО исполнения
+   (канон из `devops-consolidated-backlog.md` §Координация).
