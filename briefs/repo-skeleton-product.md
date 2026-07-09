@@ -31,7 +31,9 @@ clone → install → работает. Самодостаточность — P
 версии читает из пинов репо-вызывателя — pnpm/action-setup без версии, setup-node из engines)
 + `pr-title.yml` (semantic gate). Репо-потребитель держит 5-строчный caller
 `uses: omnifield/devopser/.github/workflows/node-ci.yml@main`. Референс текущего содержимого —
-brainer `.github/workflows/` (рабочий, CI зелёный).
+weber `.github/workflows/` (свежее brainer'а: +sherif-шаг, +`permissions: {contents: read,
+actions: read}` — без него `nx-set-shas` падает «Resource not accessible by integration» на
+репо с урезанным дефолт-токеном; грабля поймана в weber 2026-07-09).
 
 ### D2 — Пресет-пакеты (npm, publish в наш registry)
 - **nx-пресет**: `nx.json` поддерживает `extends` из установленного пакета → пакет с базовыми
