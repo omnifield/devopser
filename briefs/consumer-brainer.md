@@ -30,7 +30,9 @@ devopser `briefs/repo-skeleton-product.md`.
 есть** (reusable python-ci появится needs-driven — при втором python-потребителе):
 
 ```yaml
-permissions: { contents: read, actions: read }   # без actions:read падает nx-set-shas
+# полный список: явный permissions обнуляет дефолты — actions:read (nx-set-shas),
+# packages:read (@omnifield-пакеты; без него 403 с шага пресетов — П8)
+permissions: { contents: read, actions: read, packages: read }
 jobs:
   node:
     uses: omnifield/devopser/.github/workflows/node-ci.yml@main
