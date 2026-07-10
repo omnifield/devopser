@@ -6,7 +6,7 @@
 | **От** | devopser-архитектор, 2026-07-10 |
 | **Основание** | канон containers-only (`briefs/containers-only-and-management.md`, фундамент user P0) + blueprint D4 v1 (там же) + ваш финальный фидбек (`briefs/feedback-devbox-brainer.md`) — headless-сессия в контейнере РАБОТАЕТ |
 | **Формат** | **ПЕРЕСАДКА, не тест**: контейнер становится дефолтом рабочего флоу; хост-путь не поддерживаем (канон: на тачке — только Docker и файлы) |
-| **Пререквизит** | skeleton **0.2.2** (сторона devopser, см. ниже) — до него не стартовать |
+| **Пререквизит** | skeleton **0.2.2** — ✅ ГОТОВ (издан 2026-07-10, ревью architect пройдено) — можно стартовать |
 
 ## Цель
 
@@ -14,9 +14,10 @@
 креды переживают пересоздание контейнера, роль-флоу (claude-scope, git-gate)
 работает, коммит+push уходят изнутри. После DoD хост-сессии — легаси.
 
-## Пререквизит: skeleton 0.2.2 (заказ owner-skeleton, devopser)
+## Пререквизит: skeleton 0.2.2 — ✅ ИСПОЛНЕН (2026-07-10)
 
-Состав — по closeout оракула (`briefs/skeleton-0.2.2-closeout.md`, П1–П3 ревью):
+Состав — по closeout оракула (`briefs/skeleton-0.2.2-closeout.md`, П1–П3 ревью);
+издан в GH Packages, образ не переиздавался (Д8 — комментарий-only). Для справки:
 1. **Секрет-дизайн**: ОДИН машинный volume `omnifield-secrets` →
    `/home/vscode/.secrets`; тулзы наводятся ШТАТНЫМИ env шаблона
    (`CLAUDE_CONFIG_DIR`, `NPM_CONFIG_USERCONFIG`, `GIT_CONFIG_GLOBAL`,
