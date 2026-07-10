@@ -58,7 +58,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Монорепо-гигиена: рассинхрон версий deps между пакетами.
       - run: pnpm sherif
-      - uses: nrwl/nx-set-shas@v4
+      - uses: nrwl/nx-set-shas@v5
       - run: pnpm nx affected -t lint,typecheck,test,build
       # D3: дрейф вендоренных skeleton-копий виден сразу (красный);
       # синк — явной командой init.mjs, не молча.
