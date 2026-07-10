@@ -19,7 +19,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const FILES = join(dirname(fileURLToPath(import.meta.url)), "files");
+const PKG_DIR = dirname(fileURLToPath(import.meta.url));
+const FILES = join(PKG_DIR, "files");
+
+// К2-guard (briefs/repo-skeleton-product.md): печатаем свою версию при старте —
+// тихий откат эталона (stale dist-tag) становится видимым в логе синка/CI.
+function printVersion() {
+  const { name, version } = JSON.parse(readFileSync(join(PKG_DIR, "package.json"), "utf8"));
+  console.log(`${name} ${version}`);
+}
 
 const MANAGED = [
   { src: "editorconfig", dest: ".editorconfig" },
@@ -76,6 +84,7 @@ function pins() {
 }
 
 function main() {
+  printVersion();
   const args = process.argv.slice(2);
   const check = args.includes("--check");
   const target = resolve(args.filter((a) => !a.startsWith("--"))[0] ?? ".");
