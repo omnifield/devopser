@@ -5,12 +5,15 @@ Desktop-независимое управление докером (containers-o
 Дополняет `docker context` (CLI-путь, `workstation/docker.md`), не заменяет.
 
 - **Up**: `docker compose up -d` → https://localhost:9443
-- ⚠️ **Первый вход — в течение ~5 минут**: создать admin-пароль; Portainer
-  блокирует простаивающую первичную настройку (`docker compose restart portainer`
-  если проспал).
-- **Setup token** (CE ≥2.39, поле на форме первого входа) — печатается в логи
-  контейнера: `docker logs omnifield-portainer | grep setup_token` — брать
-  ПОСЛЕДНИЙ (каждый рестарт генерит новый).
+- **Первый вход**: контейнер идёт с `--no-setup-token` (пульт localhost-only;
+  токен-в-логах CE 2.39 давал гонки с 5-мин таймаутом настройки) — создать админа
+  сразу после up: либо форма в UI (логин+пароль, ⚠️ в течение ~5 минут, проспал —
+  `docker compose restart portainer`), либо мгновенно через API:
+  ```sh
+  curl -sk -X POST https://localhost:9443/api/users/admin/init \
+    -H "Content-Type: application/json" \
+    -d '{"Username":"admin","Password":"<пароль 12+ символов>"}'
+  ```
 - **Удалённые серверы**: Environments → Add → Docker Agent (одна команда на сервере,
   из UI) — появится по мере реальных серверов.
 - **Границы**: пульт ИНФРЫ (докер-хосты); наблюдаемость агент-сессий — продукт

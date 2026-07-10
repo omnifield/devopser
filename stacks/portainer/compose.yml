@@ -16,6 +16,9 @@ services:
     image: portainer/portainer-ce:2.39.4
     container_name: omnifield-portainer
     restart: unless-stopped
+    # Без setup-токена: пульт localhost-only, admin создаётся сразу после up
+    # (README §Первый вход) — токен-в-логах давал гонки с 5-мин таймаутом.
+    command: --no-setup-token
     ports:
       - "9443:9443"
     volumes:
