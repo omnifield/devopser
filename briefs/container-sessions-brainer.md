@@ -16,28 +16,35 @@
 
 ## Пререквизит: skeleton 0.2.2 (заказ owner-skeleton, devopser)
 
-Шаблон devcontainer дополняется по blueprint D4 + вашим Д6/Д7:
-1. **Секрет-volumes** (точечные, НЕ весь home): `~/.claude` + `~/.claude.json`,
-   `~/.npmrc`, `~/.config/gh`, `~/.gitconfig` — home остаётся cattle, секреты
-   переживают пересоздание. Реализация (volume-на-каталог + файл) — за owner.
-2. **node_modules в named volume** (ваш Д6: bind-mount install >11 мин висяк
-   против 30 s в volume) — в шаблон или README-правило, решение owner.
-3. README: ☠ Д7 (`rm -rf node_modules` через bind-mount — 193 s и ломает FS —
-   не делать; пересоздавать volume), Д8-нюанс (uv взял системный python — как
-   добиться uv-managed), «вход в роль — env, не .ps1» (см. ниже).
+Состав — по closeout оракула (`briefs/skeleton-0.2.2-closeout.md`, П1–П3 ревью):
+1. **Секрет-дизайн**: ОДИН машинный volume `omnifield-secrets` →
+   `/home/vscode/.secrets`; тулзы наводятся ШТАТНЫМИ env шаблона
+   (`CLAUDE_CONFIG_DIR`, `NPM_CONFIG_USERCONFIG`, `GIT_CONFIG_GLOBAL`,
+   `GH_CONFIG_DIR`) — никаких симлинков/своих форматов (поверх volume позже
+   встанет «кабинет» управления ключами). Home остаётся cattle, секреты
+   переживают пересоздание.
+2. **README devbox, блок контейнер-сессий**: ☠ Д7 (на NTFS-bind не трогать
+   node_modules из контейнера) · Д6 как ТРАНЗИШЕН-правило (старый виндовый клон →
+   переклонировать в WSL2 FS; volume-overlay — временная мера, в шаблон НЕ идёт) ·
+   вход в роль через env (Д9 закрыт так) · appPort-нюанс · границы доверия
+   секрет-volume.
+3. **Пост-шаги README на канон**: занос кредов файлом, `/login`-путь убран;
+   Д8 — правка легенды (uv качает CPython, когда системный не удовлетворяет пину).
 
 ## Порядок пересадки (чек-лист)
 
 1. Синк скелета до 0.2.2 (`pnpm dlx @omnifield/skeleton`).
 2. **Windows: рабочая копия — клон в WSL2 FS** (канон, фундамент п.3; bind-mount
    с NTFS — источник ваших Д6/Д7-болей).
-3. Занос кредов (однократно, дальше живут в секрет-volumes):
-   - `~/.claude/.credentials.json` — файлом (ровно то, что произвёл бы `/login`;
-     ваш проверенный путь `docker cp`) + `hasTrustDialogAccepted` в `~/.claude.json`
-     контейнера; интерактивный `/login` — не канон (приоритет-флип user);
-   - `~/.npmrc` с PAT (образец — devopser `workstation/README.md`);
+3. Занос кредов (однократно, дальше живут в секрет-volume; целевые пути задают
+   env шаблона — руками ничего не изобретать):
+   - `.credentials.json` (ровно то, что произвёл бы `/login`; ваш проверенный
+     путь `docker cp`) + `.claude.json` с `hasTrustDialogAccepted` — в
+     `$CLAUDE_CONFIG_DIR`; интерактивный `/login` — не канон (приоритет-флип user);
+   - npmrc с PAT — по пути `$NPM_CONFIG_USERCONFIG` (образец — devopser
+     `workstation/README.md`);
    - `gh auth login --with-token` + `gh auth setup-git` (ваш проверенный путь) +
-     `git config user.*`.
+     `git config user.*` — конфиги лягут в секрет-каталог сами (env наведены).
 4. **Вход в роль — через env, не скрипт**: pwsh в образ не тащим (ваш Д9),
    `claude-scope.ps1` остаётся хост-историей. Scope задаётся при запуске сессии:
    `OMNIFIELD_SCOPE=<scope>` (`containerEnv` / `docker exec -e`); sh-обёртку
@@ -58,6 +65,8 @@
   отдельный осознанный конфиг.
 - Наблюдаемость агент-сессий — ваш продукт; хост-сервисы из контейнера — через
   `host.docker.internal` (в шаблоне с 0.2.1).
+- Секрет-volume читаем любым процессом с docker-доступом на машине — для
+  single-user тачки принято (В1 ревью); multi-user — отдельная проработка.
 - Compose ваших сервисов — не этот бриф (отдельный заказ, когда решите).
 
 ## DoD
@@ -66,14 +75,14 @@
 (включая push), креды переживают пересоздание, на хост ничего не поставлено.
 Фидбек — `briefs/feedback-container-sessions-brainer.md` сюда.
 
-## Вопросы на ревью оракула (до запуска)
+## Ревью оракула — ✅ АПРУВ (2026-07-10, поправки вшиты выше)
 
-1. Секреты в named volumes: plaintext-креды в docker-volume читаемы любым, у кого
-   есть docker на машине. Для single-user тачки принимаем? Альтернатив без
-   усложнения не видно (env-инжект — те же яйца, vault — оверкилл для dev).
-2. Граница «вход через env вместо claude-scope.ps1»: identity-баннер и marker-хук
-   заводятся от `OMNIFIELD_SCOPE` — достаточно ли, или sh-порт скрипта нужен
-   в шаблон (а не «на усмотрение потребителя»)?
+- П1: volume-на-файл технически невозможен → секрет-дизайн = один volume + env
+  (пререквизит п.1). П2: имя volume машинное, не пер-репо. П3: node_modules-overlay
+  в шаблон не идёт — транзишен-правило README.
+- В1 (секреты в volume): для single-user принимаем, строка о границе доверия —
+  в README. В2 (env vs sh-порт claude-scope): вход через env достаточен, sh-порт
+  в шаблон не вводим (Д9 закрыт так).
 
 ---
 
