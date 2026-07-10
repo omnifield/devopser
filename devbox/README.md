@@ -48,7 +48,9 @@ bind-mount рабочей папки** (файлы на
    подкаталог сам не появится — `docker cp` в несуществующий путь падает), затем
    положить `$CLAUDE_CONFIG_DIR/.credentials.json` (ровно то, что произвёл
    бы `/login`; проверенный путь — `docker cp` из донора) + `.claude.json` с
-   `"hasTrustDialogAccepted": true` в тот же каталог. Никакого `/login`.
+   `"hasTrustDialogAccepted": true` в тот же каталог. После `docker cp` файлы
+   root-owned — завершить `sudo chown -R vscode:vscode "$CLAUDE_CONFIG_DIR"`
+   (К3). Никакого `/login`.
 2. **npm PAT** (@omnifield-пакеты; нужен даже для публичных — специфика GH Packages):
    записать в файл `$NPM_CONFIG_USERCONFIG` пару строк (образец — workstation/README
    §Пост-шаги п.3):

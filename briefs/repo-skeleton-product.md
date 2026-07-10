@@ -163,3 +163,22 @@ test,build) + extension-point `.husky/pre-push.local`; init.mjs/README/consumer-
 опубликован; devopser пересинкан на себе (pre-push появился, drift чист).
 Заметки-не-блокеры приняты: nx release — при росте пакетов; publish-флоу `@weber/*` —
 зона weber, node-ci не трогает.
+
+---
+
+## 📦 Заказ К2-guard — версия синка видимой (architect → owner-skeleton, 2026-07-10)
+
+Фидбек пересадки brainer (`feedback-container-sessions-brainer.md`, К2): `pnpm dlx
+@omnifield/skeleton` БЕЗ пина исполнил 0.1.2 — GH Packages отдал stale dist-tag,
+старый синк тихо ОТКАТИЛ фиксы эталона. На момент триажа abbreviated и full
+метаданные оба отдают 0.2.2 (стейл transient, на сервере чинить нечего) — защита
+на нашей стороне:
+
+1. **init.mjs печатает свою версию при старте** (из package.json пакета) — тихий
+   откат эталона становится видимым в логе синка/CI.
+2. Опционально (решение owner): fail-fast сверка с минимально ожидаемой версией
+   потребителя — только через родное поле (package.json целевого репо), без
+   своих файлов-форматов.
+
+Канон-команда синка в доках уже переведена на явную версию (правки architect:
+README skeleton + workflows README).

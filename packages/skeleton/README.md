@@ -9,8 +9,10 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`). Файлы, обязанн
 ```sh
 # новый репо (или синк существующего — идемпотентно):
 node <devopser>/packages/skeleton/init.mjs <target>
-# или после publish, из корня целевого репо:
-pnpm dlx @omnifield/skeleton
+# или после publish, из корня целевого репо — ВСЕГДА с явной версией
+# (К2 фидбека brainer: GH Packages может отдать stale dist-tag, и старый
+# синк тихо откатит эталон; версия — packages/skeleton/package.json):
+pnpm dlx @omnifield/skeleton@<версия>
 
 # drift-check (то, что гоняет шаг reusable CI; exit 1 при дрейфе):
 node <devopser>/packages/skeleton/init.mjs --check <target>
