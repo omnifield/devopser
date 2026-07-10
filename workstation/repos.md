@@ -1,7 +1,9 @@
 # Repos — карта экосистемы для новой машины
 
 Что клонить после `bootstrap.ps1`, куда, и что поднять после клона.
-Клонирование в MVP — руками по этой карте; автоматизация — следующая итерация.
+Containers-only: git на хост не ставится — клон делается ИЗ devbox-контейнера
+в примонтированную папку (`devbox/README.md` §Использование п.1); дальнейшие
+команды (`pnpm install` / `uv sync`) — тоже внутри контейнера.
 
 ## Канон-раскладка
 
@@ -26,7 +28,8 @@ projects/new/
 | devopser | `omnifield/devopser` | `https://github.com/omnifield/devopser.git` |
 | capsuleTech (оракул) | `capsuleTech` | `https://github.com/egor6-66/capsuleTech.git` |
 
-Перед клоном — git-auth (пост-шаг README): приватные репо без него не склонируются.
+Репо публичны — анонимный клон работает; git-auth (пост-шаг README, внутри
+контейнера) нужен для push.
 
 ## Что поднять после клона
 

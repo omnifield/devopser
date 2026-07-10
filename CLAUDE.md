@@ -48,8 +48,10 @@ Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-
 - **Секреты — только env-инжект** (GH Environments / vault devopser): файлы с секретами
   в управляемых репо не появляются (репо публичные). Каждый деплой-бриф обязан содержать
   секцию секретов; гейт — gitleaks-шаг reusable CI.
-- **Машина = cattle.** Поставил тулзу на машину руками → это gap `workstation/`-bootstrap'а,
-  фиксится там; репо продуктов декларируют версии пинами (`.python-version`, `packageManager`).
+- **Машина = cattle, containers-only** (канон user 2026-07-10): на тачке — только Docker
+  и файлы; тулчейн/git/сессии — в devbox-контейнере. Поставил что-то на хост руками →
+  нарушение канона (`briefs/containers-only-and-management.md`); версии декларируют
+  пины репо (`.python-version`, `packageManager`) — исполняются внутри контейнера.
 - ⚠️ Изменение портов/маршрутов = **контракт** (потребители: brainer, writer, оракул) —
   только через architect + запись в `registry/`.
 

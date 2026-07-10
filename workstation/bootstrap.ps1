@@ -1,28 +1,25 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Omnifield workstation bootstrap - base dev-machine layer.
+    Omnifield workstation bootstrap - containers-only base layer.
     Capability: workstation (provision / verify). Provider: windows-winget (MVP).
 
 .DESCRIPTION
-    Installs exactly the 6 base-layer tools (canon: commons
-    standards/workflow/toolchain-pins.md): git, node LTS, pnpm >=10, uv,
-    Docker Desktop, claude CLI. Idempotent: tools already present are skipped
-    and reported with their version.
+    Canon (containers-only, briefs/containers-only-and-management.md, 2026-07-10):
+    the machine gets Docker and NOTHING else - no git, no node/pnpm/uv, no
+    claude CLI on the host. Everything executes inside containers
+    (ghcr.io/omnifield/devbox); files live on the machine via bind-mount.
 
-    Everything else self-assembles from pins inside product repos
-    (.python-version -> uv fetches CPython, packageManager -> pnpm >=10
-    switches itself to the pinned version). Do NOT add system Python / pip
-    here - that layer is owned by the pins. Corepack is deprecated and is NOT
-    used anywhere (no corepack enable). See workstation/README.md.
+    This script installs/verifies exactly one thing: Docker Desktop (winget).
+    Alternative installs (engine in WSL2 without Desktop, linux servers) are
+    manual - see workstation/docker.md.
 
 .PARAMETER Verify
-    Report-only preflight: prints a tool -> status/version table, installs
-    nothing. Exit 1 if any tool is missing or below its minimum major version
-    (usable as CI/session preflight).
+    Report-only preflight: docker binary + engine responsiveness, installs
+    nothing. Exit 1 on gaps.
 
 .EXAMPLE
-    .\bootstrap.ps1            # provision the machine
+    .\bootstrap.ps1            # provision (install Docker Desktop if missing)
 .EXAMPLE
     .\bootstrap.ps1 -Verify    # preflight check only
 #>
@@ -33,151 +30,88 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Base layer registry. WingetId = $null means the tool is not installed via
-# winget (claude uses the native installer below). MinMajor: found-but-older
-# counts as a gap (pnpm <10 cannot execute packageManager pins itself).
-$BaseTools = @(
-    [pscustomobject]@{ Name = 'git';    WingetId = 'Git.Git';              MinMajor = $null },
-    [pscustomobject]@{ Name = 'node';   WingetId = 'OpenJS.NodeJS.LTS';    MinMajor = $null },
-    [pscustomobject]@{ Name = 'pnpm';   WingetId = 'pnpm.pnpm';            MinMajor = 10 },
-    [pscustomobject]@{ Name = 'uv';     WingetId = 'astral-sh.uv';         MinMajor = $null },
-    [pscustomobject]@{ Name = 'docker'; WingetId = 'Docker.DockerDesktop'; MinMajor = $null },
-    [pscustomobject]@{ Name = 'claude'; WingetId = $null;                  MinMajor = $null }
-)
-
 function Update-SessionPath {
     # Installers write PATH to the registry; the current session does not see
-    # it until re-read. Append (not replace) so session-only entries survive;
-    # duplicates are harmless.
+    # it until re-read. Append (not replace) so session-only entries survive.
     $machine  = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user     = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = $env:Path + ';' + $machine + ';' + $user
 }
 
-function Get-ToolState {
-    param([pscustomobject]$Tool)
-    $cmd = Get-Command $Tool.Name -ErrorAction SilentlyContinue
+function Get-DockerState {
+    $cmd = Get-Command docker -ErrorAction SilentlyContinue
     if (-not $cmd) {
-        return [pscustomobject]@{ Name = $Tool.Name; Found = $false; Satisfied = $false; Version = '' }
+        return [pscustomobject]@{ Found = $false; EngineUp = $false; Version = '' }
     }
     $version = 'found (version unknown)'
+    $engineUp = $false
     try {
         $ErrorActionPreference = 'Continue'
-        $out = & $Tool.Name --version 2>$null | Select-Object -First 1
+        $out = docker --version 2>$null | Select-Object -First 1
         if ($out) { $version = "$out".Trim() }
+        docker info *>$null
+        if ($LASTEXITCODE -eq 0) { $engineUp = $true }
     } catch {
     } finally {
         $ErrorActionPreference = 'Stop'
     }
-    $satisfied = $true
-    if ($Tool.MinMajor) {
-        $m = [regex]::Match($version, '\d+')
-        if (-not $m.Success -or [int]$m.Value -lt $Tool.MinMajor) { $satisfied = $false }
-    }
-    return [pscustomobject]@{ Name = $Tool.Name; Found = $true; Satisfied = $satisfied; Version = $version }
-}
-
-function Get-AllStates {
-    foreach ($t in $BaseTools) { Get-ToolState -Tool $t }
+    return [pscustomobject]@{ Found = $true; EngineUp = $engineUp; Version = $version }
 }
 
 function Show-Report {
-    param($States, [hashtable]$Installed)
+    param($State)
     Write-Host ''
-    Write-Host ('{0,-10} {1,-10} {2}' -f 'TOOL', 'STATUS', 'VERSION')
+    Write-Host ('{0,-10} {1,-12} {2}' -f 'TOOL', 'STATUS', 'VERSION')
     Write-Host ('-' * 60)
-    foreach ($s in $States) {
-        if ($s.Satisfied -and $Installed[$s.Name])   { $status = 'INSTALLED' }
-        elseif ($s.Satisfied)                        { $status = 'OK' }
-        elseif ($s.Found)                            { $status = 'OUTDATED' }
-        elseif ($Installed[$s.Name])                 { $status = 'FAILED' }
-        else                                         { $status = 'MISSING' }
-        Write-Host ('{0,-10} {1,-10} {2}' -f $s.Name, $status, $s.Version)
-    }
+    if (-not $State.Found)        { $status = 'MISSING' }
+    elseif (-not $State.EngineUp) { $status = 'ENGINE-DOWN' }
+    else                          { $status = 'OK' }
+    Write-Host ('{0,-10} {1,-12} {2}' -f 'docker', $status, $State.Version)
     Write-Host ''
 }
 
-function Install-ClaudeCli {
-    # Native installer (self-updating, no dependency on node/npm being live on
-    # PATH mid-bootstrap). Choice rationale: workstation/README.md.
-    Write-Host 'Installing claude CLI (native installer, claude.ai/install.ps1)...'
-    Invoke-RestMethod -Uri 'https://claude.ai/install.ps1' | Invoke-Expression
-}
-
-# --- scan -------------------------------------------------------------------
-
-# Sync PATH from the registry up front: a shell opened before a previous
-# bootstrap run has a stale PATH and would re-detect installed tools as missing.
 Update-SessionPath
-$states = @(Get-AllStates)
+$state = Get-DockerState
 
 if ($Verify) {
-    Show-Report -States $states -Installed @{}
-    $gaps = @($states | Where-Object { -not $_.Satisfied })
-    if ($gaps.Count -gt 0) {
-        Write-Host ('Verify FAILED - gaps: ' + (($gaps | ForEach-Object { $_.Name }) -join ', ')) -ForegroundColor Red
-        Write-Host 'Run .\bootstrap.ps1 (no flags) to provision.'
+    Show-Report -State $state
+    if (-not $state.Found) {
+        Write-Host 'Verify FAILED - docker missing. Run .\bootstrap.ps1 to provision.' -ForegroundColor Red
         exit 1
     }
-    Write-Host 'Verify OK - base layer complete.' -ForegroundColor Green
+    if (-not $state.EngineUp) {
+        Write-Host 'Verify FAILED - docker binary is present but the engine is not responding (start Docker Desktop / see workstation/docker.md).' -ForegroundColor Red
+        exit 1
+    }
+    Write-Host 'Verify OK - containers-only base layer complete.' -ForegroundColor Green
     exit 0
 }
 
-# --- provision --------------------------------------------------------------
-
-$installed = @{}
-$gaps      = @($states | Where-Object { -not $_.Satisfied })
-
-if ($gaps.Count -eq 0) {
-    Write-Host 'Base layer already complete - nothing to install.'
+if ($state.Found) {
+    Write-Host 'Docker already present - nothing to install.'
 } else {
-    $wingetNeeded = @($gaps | Where-Object {
-        $name = $_.Name
-        ($BaseTools | Where-Object { $_.Name -eq $name }).WingetId
-    })
-    if ($wingetNeeded.Count -gt 0 -and -not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host 'winget not found. Install "App Installer" from Microsoft Store first (see README troubleshooting for LTSC/Server).' -ForegroundColor Red
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host 'winget not found. Install "App Installer" from Microsoft Store first (see README troubleshooting), or install Docker manually - workstation/docker.md.' -ForegroundColor Red
         exit 1
     }
-
-    foreach ($g in $gaps) {
-        $name = $g.Name
-        $tool = $BaseTools | Where-Object { $_.Name -eq $name }
-        if ($tool.WingetId) {
-            Write-Host ('Installing {0} via winget ({1})...' -f $tool.Name, $tool.WingetId)
-            winget install --id $tool.WingetId --exact --source winget --accept-package-agreements --accept-source-agreements
-            if ($LASTEXITCODE -eq 0) {
-                $installed[$tool.Name] = $true
-            } else {
-                Write-Warning ('winget install {0} exited with code {1}' -f $tool.WingetId, $LASTEXITCODE)
-                $installed[$tool.Name] = $true  # attempted; final re-scan decides OK/FAILED
-            }
-        } elseif ($tool.Name -eq 'claude') {
-            try {
-                Install-ClaudeCli
-                $installed['claude'] = $true
-            } catch {
-                Write-Warning ('claude CLI install failed: ' + $_.Exception.Message)
-                $installed['claude'] = $true
-            }
-        }
+    Write-Host 'Installing Docker Desktop via winget (Docker.DockerDesktop)...'
+    winget install --id Docker.DockerDesktop --exact --source winget --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning ('winget install exited with code {0}' -f $LASTEXITCODE)
     }
-
     Update-SessionPath
+    $state = Get-DockerState
 }
 
-# --- final report ------------------------------------------------------------
+Show-Report -State $state
 
-$states = @(Get-AllStates)
-Show-Report -States $states -Installed $installed
-
-$remaining = @($states | Where-Object { -not $_.Satisfied })
-if ($remaining.Count -gt 0) {
-    Write-Host ('Bootstrap incomplete - remaining gaps: ' + (($remaining | ForEach-Object { $_.Name }) -join ', ')) -ForegroundColor Red
-    Write-Host 'A new terminal may be required for PATH changes; then re-run .\bootstrap.ps1 -Verify.'
+if (-not $state.Found) {
+    Write-Host 'Bootstrap incomplete - docker still missing. A new terminal may be required for PATH; then .\bootstrap.ps1 -Verify.' -ForegroundColor Red
     exit 1
 }
-
-Write-Host 'Base layer complete.' -ForegroundColor Green
-Write-Host 'Post-steps (manual, one-time): git auth, claude login, Docker Desktop first run - see workstation/README.md.'
+if (-not $state.EngineUp) {
+    Write-Host 'Docker installed but engine not running yet: start Docker Desktop once (license + WSL2 init), then .\bootstrap.ps1 -Verify.' -ForegroundColor Yellow
+    exit 0
+}
+Write-Host 'Containers-only base layer complete. Next: workstation/README.md (post-steps happen INSIDE the container).' -ForegroundColor Green
 exit 0

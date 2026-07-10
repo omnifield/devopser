@@ -1,100 +1,63 @@
-# workstation — provisioning dev-машины
+# workstation — provisioning dev-машины (containers-only)
 
-Capability `workstation`: **provision / verify** рабочей машины одной идемпотентной командой.
-Provider MVP — `windows-winget`; `macos-brew` / `linux-apt` — позже, extension по тому же шву
-(тот же реестр инструментов, другой инсталлятор). `update` (апгрейд версий) — тоже позже,
-v1 закрывает provision+verify.
+Capability `workstation`: **provision / verify** машины одной идемпотентной командой.
+Канон (user, P0, 2026-07-10 — `briefs/containers-only-and-management.md`):
+**на тачке — только Docker и файлы**. Ни git, ни node/pnpm/uv, ни Claude Code на
+хосте: всё исполняется в контейнере `ghcr.io/omnifield/devbox` (см. `devbox/README.md`),
+файлы живут на машине через bind-mount.
 
-Происхождение: инцидент 2026-07-08 — новая тачка без uv/python, полчаса ручной установки.
-POLICY: поставил что-то на машину руками → это gap этого bootstrap'а, фиксится здесь.
+История: v1 bootstrap ставил 6 хост-тулзов (инцидент 2026-07-08); containers-only
+отменил хост-путь — история в git.
 
-## Quickstart — новая тачка, 2 команды
-
-Обычный PowerShell достаточен — winget сам поднимает UAC-промпты на machine-scope
-инсталляторы (Git, node, Docker Desktop), жать «да» по мере появления:
+## Quickstart — новая тачка
 
 ```powershell
 cd workstation
-.\bootstrap.ps1            # ставит базовый слой (идемпотентно, повторный запуск = все skip)
-.\bootstrap.ps1 -Verify    # контроль: полная зелёная таблица, exit 0
+.\bootstrap.ps1            # ставит Docker Desktop (единственный хост-инструмент)
+.\bootstrap.ps1 -Verify    # docker найден + engine отвечает, exit 0
 ```
 
-Дальше: пост-шаги ниже → клон репо по [repos.md](repos.md) → работаешь.
+Не-Windows / без Desktop / серверы — [docker.md](docker.md). Дальше — клон и работа
+**изнутри контейнера** по [repos.md](repos.md).
 
-## Что ставит bootstrap (базовый слой, ровно 6)
+## Что на хосте, что в контейнере
 
-Канон набора — commons `standards/workflow/toolchain-pins.md`.
+| Где | Что |
+|---|---|
+| Хост | Docker · рабочие папки (Windows: клоны в WSL2 FS — bind родного NTFS медленный) · IDE как окно в контейнер |
+| Контейнер (devbox) | git-операции · тулчейн (node/pnpm/uv/go/gh) · Claude-сессии · сервисы/стеки |
 
-| Tool | Как | Зачем |
-|---|---|---|
-| git | winget `Git.Git` | всё |
-| node LTS | winget `OpenJS.NodeJS.LTS` | JS-репо |
-| pnpm ≥10 | winget `pnpm.pnpm` | сам исполняет пин `packageManager` репо (см. ниже) |
-| uv | winget `astral-sh.uv` | Python-репо (сам качает CPython) |
-| Docker Desktop | winget `Docker.DockerDesktop` | стеки devopser |
-| claude CLI | нативный installer `claude.ai/install.ps1` | сессии |
+Пины репо (`packageManager`, `.python-version`, `go.mod`) исполняются внутри
+контейнера теми же механизмами, что и раньше — образ лишь оболочка
+(`devbox/README.md` §Известное поведение).
 
-⚠️ **Corepack — НЕ опора** (deprecated, выпиливается из Node, требует ручного enable):
-`corepack enable` не выполняется нигде — ни здесь, ни в CI, ни в доках. pnpm <10 в
-verify-таблице = OUTDATED (не умеет сам исполнять `packageManager`) — bootstrap обновит.
+## Пост-шаги (один раз, ВНУТРИ контейнера — секреты/логины)
 
-**Выбор способа установки claude CLI — нативный installer** (не `npm i -g`): не зависит от
-того, подхватился ли node в PATH текущей сессии посреди bootstrap'а, и самообновляется.
-Уже стоящий npm-вариант bootstrap не трогает (детект по PATH, любой способ = OK).
+Персистентность кредов между рестартами контейнера — предмет blueprint'а D4
+(containers-only бриф); до него — санity-путь: home-каталог контейнера живёт,
+пока жив контейнер (`devcontainer up` переиспользует его), при пересоздании —
+повторить пост-шаги.
 
-## Что bootstrap НЕ ставит (самособирается из пинов)
-
-Граница ответственности — базовый слой на машину, остальное декларируют репо продуктов
-(полный набор пинов — commons `standards/workflow/toolchain-pins.md`):
-
-- `.python-version` → `uv sync` сам качает нужный CPython. **Никакого системного Python/pip.**
-- `packageManager` в package.json → **сам pnpm ≥10** переключается на запиненную версию
-  (`manage-package-manager-versions`, дефолт из коробки). Bootstrap ставит «любой 10.x+»,
-  конкретную версию дальше исполняет пин.
-- deps → `pnpm install` / `uv sync` в репо.
-
-Хочется добавить инструмент в bootstrap → сначала вопрос «а не пин ли это в репо продукта?».
-
-## `-Verify` — preflight
-
-Ничего не ставит: таблица tool → OK/MISSING + версия, exit 1 если чего-то нет.
-Дёргать из CI/сессий перед работой.
-
-## Пост-шаги (руками, один раз — секреты/логины вне скоупа bootstrap'а)
-
-1. **git auth**: `git config --global user.name/user.email` + credential
-   (первый push спросит через Git Credential Manager — идёт с Git.Git).
-2. **claude login**: `claude` → `/login` (браузерный OAuth).
-3. **GitHub Packages auth** (@omnifield-пакеты: пресеты/скелет devopser'а):
-   PAT (classic) со scope `read:packages` нужен даже для ПУБЛИЧНЫХ пакетов —
-   специфика npm-реестра GH Packages. В user-level `~/.npmrc` ровно так
-   (копипастный образец, токен — на место `<PAT>` ЦЕЛИКОМ строки после `=`):
+1. **git identity + auth**: `git config --global user.name/user.email`;
+   push-креды — `gh auth login` (браузерная ссылка открывается на хосте).
+2. **claude login**: `claude` → `/login`.
+3. **GitHub Packages PAT** (@omnifield-пакеты; нужен даже для публичных —
+   специфика npm-реестра GH Packages). В `~/.npmrc` контейнера ровно эта пара:
    ```
    @omnifield:registry=https://npm.pkg.github.com
    //npm.pkg.github.com/:_authToken=<PAT c read:packages>
    ```
-   ⚠️ Инцидент 2026-07-09: токен, вписанный не на своё место, дал 401 и засветился
-   в npm-warning'е терминала → пришлось ревокать. Токен — только user-level,
-   в репо не коммитить (repo-`.npmrc` из skeleton-набора содержит только
-   scope-маппинг, без токена).
-   Если в `~/.npmrc` уже живут токены других реестров — нужна именно ЭТА пара строк
-   (Д5 фидбека devbox); живость токена проверяется до install:
-   ```
-   curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token <PAT>" https://api.github.com/user
-   ```
-   (`200` — жив, `401` — дохлый/не тот).
-4. **Docker Desktop first-run**: запустить один раз GUI — принять лицензию,
-   дождаться WSL2-инициализации. До этого `docker compose` не работает.
-5. Клон репо → [repos.md](repos.md).
+   ⚠️ Токен только в home контейнера, в репо не коммитить. Если в `~/.npmrc` уже
+   есть чужие реестры — нужна именно ЭТА пара строк (Д5 фидбека devbox).
+   Живость токена: `curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token <PAT>" https://api.github.com/user`
+   (`200` — жив, `401` — дохлый).
 
 ## Troubleshooting
 
-- **Нет winget** (LTSC / Server / старый Win10): поставить «App Installer» из Microsoft Store,
-  либо msixbundle с github.com/microsoft/winget-cli/releases.
-- **Инструмент поставился, но MISSING в финальной таблице**: PATH-изменение не дошло до
-  сессии — новый терминал → `.\bootstrap.ps1 -Verify`.
-- **pnpm OUTDATED (<10)**: старый pnpm (npm-глобальный / corepack-шим) первым в PATH —
-  bootstrap ставит winget-standalone; если OUTDATED остался, снести старый
-  (`npm rm -g pnpm`) и новый терминал.
-- **Docker Desktop поставился, `docker` MISSING**: до первого запуска GUI бинарь может не
-  попасть в PATH — см. пост-шаг 3, затем новый терминал.
+- **Нет winget** (LTSC / Server): «App Installer» из Microsoft Store, либо
+  msixbundle с github.com/microsoft/winget-cli/releases, либо Docker руками
+  ([docker.md](docker.md)).
+- **docker поставился, но ENGINE-DOWN**: запустить Docker Desktop GUI один раз
+  (лицензия, WSL2-инициализация), затем `.\bootstrap.ps1 -Verify`.
+- **Медленный `pnpm install` в контейнере на Windows**: клон лежит на NTFS —
+  перенести в WSL2 FS (`\\wsl$\...`) или путь clone-in-volume (`devbox/README.md`).
