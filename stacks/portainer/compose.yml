@@ -1,0 +1,28 @@
+# Portainer CE — Desktop-независимый web-пульт docker-хостов
+# (briefs/containers-only-and-management.md D2.2; заказчик — user, боль
+# «не могу нормально управлять»). Self-hosted, free.
+#
+# Запуск:  docker compose up -d   (из этой директории)
+# UI:      https://localhost:9443 (⚠️ первый вход — в течение ~5 минут после
+#          старта: Portainer блокирует незавершённую первичную настройку;
+#          проспал — docker compose restart portainer)
+# Порт 9443 — registry/ports.md (контракт).
+#
+# Удалённые демоны подключаются позже: Environments → Docker (agent на сервере)
+# либо через docker context + локальный socket. Граница: это пульт ИНФРЫ
+# (хосты/контейнеры); наблюдаемость агент-сессий — продукт brainer.
+services:
+  portainer:
+    image: portainer/portainer-ce:2.39.4
+    container_name: omnifield-portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    volumes:
+      # Управление локальным демоном. Socket = root-доступ к хосту докера —
+      # пульт держим локальным (порт не публикуем наружу).
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+
+volumes:
+  portainer-data:

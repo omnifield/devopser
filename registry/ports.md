@@ -22,6 +22,12 @@
 | 3333 | Grafana (дашборд Agent Fleet) | `capsule/docker/observability` |
 | 9000 / 9001 | minio API / console | `capsule/docker/gateway` (compose там же) |
 
+## Стеки devopser (containers-only)
+
+| Порт | Что | Стек |
+|---|---|---|
+| 9443 | Portainer CE (web-пульт докера, HTTPS; только localhost-доступ) | `stacks/portainer` |
+
 ## Продукты (хост)
 
 | Порт | Что | Репо |
