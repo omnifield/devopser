@@ -1,0 +1,38 @@
+# Brief — Закрытие хвостов перед пересадкой brainer (skeleton 0.2.2)
+
+| | |
+|---|---|
+| **Адресат** | devopser-архитектор |
+| **От** | оракул-архитектор, 2026-07-10 |
+| **Основание** | ревью `container-sessions-brainer.md` (✅ апрув с поправками П1–П3) + открытые Д6–Д9 фидбека devbox-brainer |
+| **Гейт** | это ЕДИНСТВЕННЫЙ блокер запуска пересадки brainer — после 0.2.2 отмашка brainer-архитектору (пререквизит его брифа) |
+
+## Исполнено (для картины, не трогать)
+
+D1 workstation containers-only ✅ · D2.1 docker.md contexts ✅ · D2.2 Portainer стек ✅ ·
+D3 GPU-гейт ЗАКРЫТ (WSL2-бэкенд, nvidia-smi из контейнера зелёный) ✅ ·
+blueprint D4 v1 ✅ · бриф пересадки brainer написан и отревьюен ✅ ·
+Д1–Д5 фидбека закрыты (0.2.1) ✅.
+
+## Осталось (порядок = приоритет)
+
+| # | Задача | Что именно | Куда |
+|---|---|---|---|
+| 1 | **Секрет-дизайн 0.2.2** | ОДИН машинный volume `omnifield-secrets` → `/home/vscode/.secrets` + env-указатели `CLAUDE_CONFIG_DIR` / `NPM_CONFIG_USERCONFIG` / `GIT_CONFIG_GLOBAL` / `GH_CONFIG_DIR` (containerEnv). ЗАМЕНЯЕТ «5 точечных volumes» из blueprint v1 п.1 — volume-на-файл технически невозможен (П1 ревью), имя машинное не пер-репо (П2). postCreate-проба PAT: учесть, что npmrc теперь по env-пути | шаблон devcontainer |
+| 2 | **README devbox: блок контейнер-сессий** | ☠ Д7 (на NTFS-bind НЕ трогать node_modules из контейнера) · Д6 как ТРАНЗИШЕН-правило (старый виндовый клон → переклонируй в WSL2 FS; volume-overlay = временная мера, в шаблон НЕ идёт — П3) · «вход в роль — env `OMNIFIELD_SCOPE`, не .ps1» (Д9 закрыт так) · appPort/-p нюанс devcontainer-CLI (forwardPorts не публикует) · строка про границы доверия секрет-volume (В1: single-user принимаем, multi-user — отдельная проработка) | devbox/README |
+| 3 | **README devbox: пост-шаги на канон** | Сейчас «`claude` → `/login`» — противоречит канону D4 (интерактивный /login = не-продуктовый флоу): переписать на занос кредов файлом в секрет-каталог (`.credentials.json` + `hasTrustDialogAccepted`), gh — `auth login --with-token` + `setup-git` | devbox/README |
+| 4 | **Д8 — легенда, не хирургия** | Поведение УЖЕ pin-driven: uv берёт системный 3.12 только пока тот удовлетворяет пин, иначе качает. Поправить легенду Dockerfile/README («uv качает CPython, когда системный не удовлетворяет пину»). `only-managed` НЕ вводить: uv-python кэш в cattle-home = перекачка на каждом пересоздании | devbox/Dockerfile + README |
+| 5 | **Отмашка brainer** | Издать 0.2.2 → обновить пререквизит в `container-sessions-brainer.md` (пометить «0.2.2 готов») → через user запускается brainer-архитектор | брифы |
+
+## Не-блокеры (отдельные треки, в этот бриф не входят)
+
+- platform D4 issue-form — несёшь на согласование мне, своим темпом.
+- DoD-прогон workstation на чистой тачке (user) — после пересадки brainer, перед weber.
+- llm-engine compose (заказ D3): GPU-гейт зелёный → мой порт `packages/llm-engine`
+  разблокирован; состав compose сообщу с портом, Dockerfile пакета мой (CC-11).
+
+## DoD брифа
+
+Skeleton 0.2.2 издан; шаблон = секрет-каталог+env (одно имя volume на машину);
+README devbox без противоречий канону (нет /login-пути, есть Д6/Д7/Д8/appPort/границы
+доверия); пререквизит в брифе brainer помечен готовым.

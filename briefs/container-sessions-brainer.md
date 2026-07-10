@@ -74,3 +74,58 @@
 2. Граница «вход через env вместо claude-scope.ps1»: identity-баннер и marker-хук
    заводятся от `OMNIFIELD_SCOPE` — достаточно ли, или sh-порт скрипта нужен
    в шаблон (а не «на усмотрение потребителя»)?
+
+---
+
+## 🔍 Ревью оракула (2026-07-10) — ✅ АПРУВ с поправками
+
+Формат (пересадка, не тест), границы (socket не дефолт, образ не чинить у себя),
+DoD — ок, канону containers-only соответствует. Поправки ниже — ВСЕ на стороне
+devopser (уходят в состав skeleton 0.2.2, отдельный closeout-бриф
+`skeleton-0.2.2-closeout.md`); brainer-архитектору в чек-листе ничего не меняется,
+кроме п.3 (занос кредов станет «в секрет-каталог», путь укажет шаблон).
+
+**П1 — volume-на-файл не собирается; дизайн секретов = ОДИН каталог + env-указатели.**
+Named volume монтируется только в КАТАЛОГ; `~/.claude.json`, `~/.npmrc`,
+`~/.gitconfig` — файлы. «Volume-на-каталог + файл» в лоб невозможен, симлинк-обвязка
+в postCreate = костыль. Корневое решение — один секрет-каталог, инструменты
+указываем на него штатными env (все четыре это поддерживают):
+
+```
+volume omnifield-secrets → /home/vscode/.secrets
+containerEnv:
+  CLAUDE_CONFIG_DIR=/home/vscode/.secrets/claude    # .claude И .claude.json живут тут
+  NPM_CONFIG_USERCONFIG=/home/vscode/.secrets/npmrc
+  GIT_CONFIG_GLOBAL=/home/vscode/.secrets/gitconfig
+  GH_CONFIG_DIR=/home/vscode/.secrets/gh
+```
+
+Один volume вместо пяти, home остаётся cattle, файл-маунтов нет классом. Бонус:
+`CLAUDE_CONFIG_DIR` — уже словарь экосистемы (мульти-акк kernel brainer: аккаунт =
+свой config-dir → подкаталог/подмена volume). Проверить прогоном: (а) `.claude.json`
+действительно уезжает в `CLAUDE_CONFIG_DIR` (в свежих версиях — да), (б) pnpm
+подхватывает `NPM_CONFIG_USERCONFIG` (npm-config семантика), (в) `gh auth setup-git`
+пишет в `GIT_CONFIG_GLOBAL` (env должен быть в окружении сессии, не только exec).
+
+**П2 — имя секрет-volume МАШИННОЕ, не пер-репо.** Креды — уровень машины: один
+`omnifield-secrets` на все репо (brainer/weber/devopser/…), занос кредов один раз,
+не N. (`omnifield-pnpm-store` уже назван так — та же логика.)
+
+**П3 — node_modules-volume = README-правило для транзишена, НЕ шаблон.** Канон-путь
+(п.2 чек-листа: клон в WSL2 FS; хост node не запускает вообще — containers-only)
+снимает Д6/Д7 классом: платформенный конфликт существует только у NTFS-bind
+СТАРОГО виндового клона. Пер-пакетные volumes (нюанс Д7) в шаблоне — постоянная
+громоздкость ради переходного случая. В README: «переезжаешь со старого клона →
+переклонируй в WSL2 FS (канон); volume-overlay — временная миграционная мера».
+
+**Ответ В1 (plaintext в volume) — ПРИНИМАЕМ.** Single-user тачка: граница доверия
+не хуже хоста (на Windows `~/.claude` и так plaintext; docker-доступ = тот же user).
+В README devbox — явная строка: «секрет-volume читаем любым процессом с
+docker-доступом; multi-user/сервер — отдельная проработка, не сейчас».
+
+**Ответ В2 (env вместо ps1) — env ДОСТАТОЧНО, sh-порт в skeleton НЕ нужен.**
+Identity-механика (scope-identity/marker/git-gate) заводится от `OMNIFIELD_SCOPE` —
+хватает. Лаунчер (выбор модели per роль и пр.) — часть агент-харнесса, который по
+разрезу 2026-07-08 уезжает в BRAINER; в devopser-шаблон (чистая инфра, без агентов)
+его не тащим. sh-обёртка на стороне brainer — как у вас и написано, «на усмотрение»;
+каноном станет вместе с харнесс-переездом в brainer.
