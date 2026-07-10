@@ -100,8 +100,11 @@ workstation ставит только Docker).
   uv-python кэш в cattle-home = перекачка на каждом пересоздании контейнера.
 - **Windows: рабочая копия — клон в WSL2 FS** (канон), не bind родного NTFS. Переезд
   со СТАРОГО виндового клона: переклонируй в WSL2 FS — снимает платформенный конфликт
-  классом (Д6). `node_modules` такого NTFS-bind клона из контейнера НЕ трогать (Д7:
-  смешение виндового и linux-содержимого). Volume-overlay на `node_modules` —
+  классом (Д6). ☠ `node_modules` такого NTFS-bind клона из контейнера НЕ трогать —
+  ни `rm -rf`, ни reinstall, который pnpm сам предложит при platform-mismatch:
+  виндовые junction'ы pnpm видны из контейнера как обычные каталоги, удаление проходит
+  СКВОЗЬ линк и выедает исходники workspace-пакетов (Д7; инцидент — 52 файла
+  `packages/frontend`). Volume-overlay на `node_modules` —
   временная миграционная мера для застрявшего клона, в skeleton-шаблон НЕ идёт (П3).
 - **pnpm store на bind-mount (путь 2а)** падает в `<workspace>/.pnpm-store`, а не в
   volume — pnpm держит store на одном device с проектом (Д4); `.pnpm-store/` уже
