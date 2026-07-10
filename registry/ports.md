@@ -14,7 +14,6 @@
 
 | Порт | Что | Где живёт |
 |---|---|---|
-| 8080 | gateway nginx (single-origin) | `capsule/docker/gateway` |
 | 4317 | OTEL collector gRPC (сюда эмитят claude-сессии) | `capsule/docker/observability` |
 | 4318 | OTEL collector HTTP | `capsule/docker/observability` |
 | 3100 | Loki host-порт (читает brainer backend; capsule PR #478) | `capsule/docker/observability` |
@@ -26,14 +25,18 @@
 
 | Порт | Что | Стек |
 |---|---|---|
+| **8080** | **gateway nginx — single-origin вход + хаб** (единственный порт в UX/доках; переехал из капсулы 2026-07-11, `gateway-hub-single-origin.md`; капсульный gateway — предыдущая эпоха, одновременно не поднимать) | `stacks/gateway` |
 | 9443 | Portainer CE (web-пульт докера, HTTPS; только localhost-доступ) | `stacks/portainer` |
 
-## Продукты (хост)
+## Продукты (хост) — nginx-targets gateway, из UX/доков не фигурируют
 
 | Порт | Что | Репо |
 |---|---|---|
-| 3500 | brainer frontend (vite) | `omnifield/brainer` |
-| 8010 | brainer backend (uvicorn, префикс `/brainer/`) | `omnifield/brainer` |
+| 3500 | brainer frontend (vite; за gateway `/brainer/`) | `omnifield/brainer` |
+| 8010 | brainer backend (uvicorn, префикс `/brainer/`; за gateway `/api/brainer/`) | `omnifield/brainer` |
+
+⚠️ Фактические временные порты brainer — 5173/8000: освобождаются после исполнения
+порт-контракта owner'ами (`brainer/briefs/gateway-parity-{frontend,backend}.md`).
 
 ## Занято оракулом (capsule, до переключения)
 

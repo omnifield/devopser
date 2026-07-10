@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omnifield — хаб</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 3rem 1.5rem;
+    display: flex; justify-content: center;
+    background: Canvas; color: CanvasText;
+  }
+  main { width: 100%; max-width: 640px; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.sub { margin: 0 0 2rem; opacity: .65; font-size: .9rem; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li a {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 1rem; padding: .8rem 1rem; margin-bottom: .5rem;
+    border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+    border-radius: .5rem; text-decoration: none; color: inherit;
+  }
+  li a:hover { border-color: color-mix(in srgb, CanvasText 45%, transparent); }
+  li a b { font-weight: 600; }
+  li a small { opacity: .6; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
+       opacity: .55; margin: 2rem 0 .75rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Omnifield — хаб</h1>
+  <p class="sub">Одна точка входа dev-машины (stacks/gateway). MVP-статика;
+     registry-driven генерация — потом.</p>
+
+  <h2>Продукты (за gateway)</h2>
+  <ul>
+    <li><a href="/brainer/"><b>brainer</b> <small>дашборд · /brainer/</small></a></li>
+    <li><a href="/api/brainer/"><b>brainer API</b> <small>/api/brainer/</small></a></li>
+  </ul>
+
+  <h2>Инфра (пока на портах — фаза 2 заведёт за origin)</h2>
+  <ul>
+    <li><a href="http://localhost:3333/"><b>Grafana</b> <small>Agent Fleet · :3333</small></a></li>
+    <li><a href="http://localhost:9090/"><b>Prometheus</b> <small>:9090</small></a></li>
+    <li><a href="https://localhost:9443/"><b>Portainer</b> <small>пульт докера · :9443</small></a></li>
+  </ul>
+</main>
+</body>
+</html>
