@@ -1,8 +1,8 @@
 # ghcr.io/omnifield/devbox — базовый dev-образ экосистемы Omnifield
 # (briefs/docker-dev-environment.md D1). ОБОЛОЧКА тулчейна: версии-исполнители
 # остаются пинам репо (packageManager → pnpm сам переключается; .python-version →
-# uv качает CPython; go.mod → go докачивает toolchain). Обновление образа ≠ смена
-# версий тулчейна репо.
+# uv берёт системный CPython, пока тот удовлетворяет пину, иначе качает нужный;
+# go.mod → go докачивает toolchain). Обновление образа ≠ смена версий тулчейна репо.
 #
 # Сборка/публикация: .github/workflows/release-devbox.yml (датированные теги + latest).
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04

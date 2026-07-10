@@ -3,6 +3,15 @@
   "image": "ghcr.io/omnifield/devbox:v2026.07.10",
   "remoteUser": "vscode",
   "runArgs": ["--add-host=host.docker.internal:host-gateway"],
-  "mounts": ["source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume"],
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.local/share/pnpm/store && (timeout 20 npm whoami --registry=https://npm.pkg.github.com >/dev/null 2>&1 || { echo '✖ npm.pkg.github.com: нет валидного PAT в ~/.npmrc контейнера — @omnifield-пакеты не встанут. Образец: devopser workstation/README §Пост-шаги п.3'; exit 1; }) && pnpm install"
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.secrets/claude",
+    "NPM_CONFIG_USERCONFIG": "/home/vscode/.secrets/npmrc",
+    "GIT_CONFIG_GLOBAL": "/home/vscode/.secrets/gitconfig",
+    "GH_CONFIG_DIR": "/home/vscode/.secrets/gh"
+  },
+  "mounts": [
+    "source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume",
+    "source=omnifield-secrets,target=/home/vscode/.secrets,type=volume"
+  ],
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.local/share/pnpm/store /home/vscode/.secrets && (timeout 20 npm whoami --registry=https://npm.pkg.github.com >/dev/null 2>&1 || { echo '✖ npm.pkg.github.com: нет валидного PAT в $NPM_CONFIG_USERCONFIG (секрет-volume omnifield-secrets) — @omnifield-пакеты не встанут. Занос кредов: devbox/README §Пост-шаги'; exit 1; }) && pnpm install"
 }

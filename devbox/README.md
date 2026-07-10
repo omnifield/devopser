@@ -9,7 +9,8 @@ git-операции и сессии живут в этом контейнере
 ## Использование (потребитель)
 
 `.devcontainer/devcontainer.json` приезжает init-шаблоном skeleton (пин датированного
-тега + named volume под pnpm-store). **Дефолт — bind-mount рабочей папки** (файлы на
+тега + машинные named volumes: pnpm-store и секрет-volume, §Роль-сессии). **Дефолт —
+bind-mount рабочей папки** (файлы на
 машине; Windows — клон в WSL2 FS, bind родного NTFS медленный). Пути входа:
 
 1. **Чистая машина (git на хост НЕ ставится)** — клон изнутри контейнера в
@@ -35,9 +36,46 @@ git-операции и сессии живут в этом контейнере
    в docker-volume, bind-mount боли нет классом; общий pnpm-store-volume работает
    именно тут (см. «Известное поведение»).
 
-Пост-шаги внутри контейнера (один раз): `gh auth login`, `claude` → `/login`,
-PAT для @omnifield-пакетов (workstation/README §Пост-шаги п.3 — тот же `.npmrc`,
-только в home контейнера/volume).
+## Пост-шаги — занос кредов (один раз, ВНУТРИ контейнера)
+
+Креды живут в машинном volume `omnifield-secrets` (§Роль-сессии и секрет-volume);
+тулзы наведены на него штатными env шаблона — целевые пути НЕ изобретать руками, они
+заданы `CLAUDE_CONFIG_DIR` / `NPM_CONFIG_USERCONFIG` / `GIT_CONFIG_GLOBAL` /
+`GH_CONFIG_DIR`. Занос — файлом / штатной командой тулзы; интерактивный `/login`
+не канон (D4: не-продуктовый флоу).
+
+1. **Claude**: положить `$CLAUDE_CONFIG_DIR/.credentials.json` (ровно то, что произвёл
+   бы `/login`; проверенный путь — `docker cp` из донора) + `.claude.json` с
+   `"hasTrustDialogAccepted": true` в тот же каталог. Никакого `/login`.
+2. **npm PAT** (@omnifield-пакеты; нужен даже для публичных — специфика GH Packages):
+   записать в файл `$NPM_CONFIG_USERCONFIG` пару строк (образец — workstation/README
+   §Пост-шаги п.3):
+   ```
+   @omnifield:registry=https://npm.pkg.github.com
+   //npm.pkg.github.com/:_authToken=<PAT c read:packages>
+   ```
+3. **gh + git**: `echo <PAT> | gh auth login --with-token` → `gh auth setup-git`;
+   `git config --global user.name/user.email`. Конфиги лягут в секрет-каталог сами —
+   env наведены (`GH_CONFIG_DIR`, `GIT_CONFIG_GLOBAL`).
+
+Занесённые креды переживают пересоздание контейнера — volume машинный, не home
+(контрольный тест: пересоздать контейнер → сессия живёт без повторного заноса).
+
+## Роль-сессии и секрет-volume
+
+- **Вход в роль — env `OMNIFIELD_SCOPE`**, не `.ps1`. pwsh в образ не тащим (Д9):
+  `claude-scope.ps1` остаётся хост-историей. Scope задаётся при запуске сессии —
+  `OMNIFIELD_SCOPE=<scope>` (`containerEnv` / `docker exec -e`); identity-механика
+  (scope-identity / marker / git-gate, `.mjs`-хуки из bind-mount рабочей копии)
+  заводится от него, node образа их исполняет.
+- **Секрет-volume** `omnifield-secrets` → `/home/vscode/.secrets` — ОДИН машинный
+  volume на все репо (не пер-репо; занос кредов один раз, §Пост-шаги). Тулзы наведены
+  на него env шаблона, home остаётся cattle. ⚠️ Граница доверия: volume читаем любым
+  процессом с docker-доступом на машине — для single-user тачки принято; multi-user /
+  сервер — отдельная проработка, не сейчас.
+- **Порт backend наружу**: devcontainer-CLI НЕ публикует `forwardPorts` (это подсказка
+  IDE, не публикация). Для CLI-пути пробрасывай явно — `appPort` в devcontainer.json
+  либо `-p` в голом `docker run`.
 
 ## Обновление образа
 
@@ -54,6 +92,15 @@ workstation ставит только Docker).
 - **node — единственный НЕ самоуправляемый инструмент образа** (`ARG NODE_MAJOR=22`):
   репо с `engines.node` выше мажора образа потребует ребилд образа с новым ARG —
   причина не у вас в репо.
+- **uv и системный CPython** (Д8): uv берёт системный интерпретатор образа, ПОКА тот
+  удовлетворяет `.python-version`; иначе качает нужный CPython. Поведение pin-driven —
+  не «всегда системный» и не «всегда качает». `only-managed` намеренно НЕ включаем:
+  uv-python кэш в cattle-home = перекачка на каждом пересоздании контейнера.
+- **Windows: рабочая копия — клон в WSL2 FS** (канон), не bind родного NTFS. Переезд
+  со СТАРОГО виндового клона: переклонируй в WSL2 FS — снимает платформенный конфликт
+  классом (Д6). `node_modules` такого NTFS-bind клона из контейнера НЕ трогать (Д7:
+  смешение виндового и linux-содержимого). Volume-overlay на `node_modules` —
+  временная миграционная мера для застрявшего клона, в skeleton-шаблон НЕ идёт (П3).
 - **pnpm store на bind-mount (путь 2а)** падает в `<workspace>/.pnpm-store`, а не в
   volume — pnpm держит store на одном device с проектом (Д4); `.pnpm-store/` уже
   в gitignore-блоке скелета. Общий store-volume работает на пути clone-in-volume.
