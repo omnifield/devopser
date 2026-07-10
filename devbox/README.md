@@ -44,7 +44,9 @@ bind-mount рабочей папки** (файлы на
 `GH_CONFIG_DIR`. Занос — файлом / штатной командой тулзы; интерактивный `/login`
 не канон (D4: не-продуктовый флоу).
 
-1. **Claude**: положить `$CLAUDE_CONFIG_DIR/.credentials.json` (ровно то, что произвёл
+1. **Claude**: сначала `mkdir -p "$CLAUDE_CONFIG_DIR"` (volume монтируется пустым,
+   подкаталог сам не появится — `docker cp` в несуществующий путь падает), затем
+   положить `$CLAUDE_CONFIG_DIR/.credentials.json` (ровно то, что произвёл
    бы `/login`; проверенный путь — `docker cp` из донора) + `.claude.json` с
    `"hasTrustDialogAccepted": true` в тот же каталог. Никакого `/login`.
 2. **npm PAT** (@omnifield-пакеты; нужен даже для публичных — специфика GH Packages):
