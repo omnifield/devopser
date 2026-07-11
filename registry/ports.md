@@ -34,6 +34,7 @@
 |---|---|---|
 | 3500 | brainer frontend (vite; за gateway `/brainer/`) | `omnifield/brainer` |
 | 8010 | brainer backend (uvicorn, префикс `/brainer/`; за gateway `/api/brainer/`) | `omnifield/brainer` |
+| 8020 | chater backend (Go, префикс `/chater/`; за gateway `/api/chater/` — маршрут появится с runtime, `chater-go-prereqs.md`) | `omnifield/chater` |
 
 ⚠️ Фактические временные порты brainer — 5173/8000: освобождаются после исполнения
 порт-контракта owner'ами (`brainer/briefs/gateway-parity-{frontend,backend}.md`).
