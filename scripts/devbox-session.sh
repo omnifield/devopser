@@ -34,7 +34,7 @@ if [ -z "$CONTAINER" ]; then
   echo "✖ devbox-контейнер для '$REPO' не найден."
   echo "  Подними его одним из путей входа (brief A4):"
   echo "    • VS Code: «Reopen in Container» (.devcontainer/devcontainer.json)"
-  echo "    • raw:     docker run … --network $NETWORK --network-alias $REPO … (без -p; см. devbox/README)"
+  echo "    • raw:     docker run … --name omnifield-devbox-$REPO --network $NETWORK --network-alias $REPO … (без -p; см. devbox/README)"
   exit 1
 fi
 
