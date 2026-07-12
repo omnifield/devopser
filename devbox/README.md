@@ -47,10 +47,19 @@ bind-mount рабочей папки** (файлы на
 1. **Claude**: сначала `mkdir -p "$CLAUDE_CONFIG_DIR"` (volume монтируется пустым,
    подкаталог сам не появится — `docker cp` в несуществующий путь падает), затем
    положить `$CLAUDE_CONFIG_DIR/.credentials.json` (ровно то, что произвёл
-   бы `/login`; проверенный путь — `docker cp` из донора) + `.claude.json` с
-   `"hasTrustDialogAccepted": true` в тот же каталог. После `docker cp` файлы
+   бы `/login`; проверенный путь — `docker cp` из донора) + `.claude.json` c
+   `"hasTrustDialogAccepted": true` **и `"hasCompletedOnboarding": true`** в тот
+   же каталог. Без `hasCompletedOnboarding` интерактивный `claude` гонит экран
+   регистрации даже при валидных кредах (`-p`/SDK — не гонят; отсюда «пульт работал,
+   а живой claude просил логин»). `postCreateCommand` шаблона сам сеет этот файл, если
+   его нет — ручной занос нужен только для `.credentials.json`. После `docker cp` файлы
    root-owned — завершить `sudo chown -R vscode:vscode "$CLAUDE_CONFIG_DIR"`
    (К3). Никакого `/login`.
+   > ⚠️ **Claude — ТОЛЬКО в Docker, на хосте не логиниться.** Токен протухает
+   > (`expiresAt=0`) от **host↔volume расхождения**: если тот же аккаунт живёт и в
+   > `~/.claude` хоста, и в volume — OAuth-refresh ротирует токен в одной копии,
+   > вторая протухает. Один стор (volume) = проблемы нет. **Re-seed при протухании** —
+   > повторить занос `.credentials.json` тем же `docker cp` (штатная операция, не баг).
 2. **npm PAT** (@omnifield-пакеты; нужен даже для публичных — специфика GH Packages):
    записать в файл `$NPM_CONFIG_USERCONFIG` пару строк (образец — workstation/README
    §Пост-шаги п.3):
@@ -77,9 +86,13 @@ bind-mount рабочей папки** (файлы на
   на него env шаблона, home остаётся cattle. ⚠️ Граница доверия: volume читаем любым
   процессом с docker-доступом на машине — для single-user тачки принято; multi-user /
   сервер — отдельная проработка, не сейчас.
-- **Порт backend наружу**: devcontainer-CLI НЕ публикует `forwardPorts` (это подсказка
-  IDE, не публикация). Для CLI-пути пробрасывай явно — `appPort` в devcontainer.json
-  либо `-p` в голом `docker run`.
+- **Порты продуктов наружу НЕ публикуются** (`gateway-network-single-origin.md`):
+  single-origin — наружу машины только `:8080` (gateway). Сервисы (backend/frontend)
+  живут на внутренних портах контейнера, gateway достаёт их **по docker-сети
+  `omnifield-gateway`** по alias'у devbox'а (= имя репо) — шаблон вешает
+  `--network=omnifield-gateway --network-alias=<repo>` (`runArgs`) + `initializeCommand`
+  создаёт сеть. Никаких `appPort`/`-p` на продукт-порты — занятость порта у юзера
+  системе безразлична (в namespace контейнера), единственный хост-порт — `:8080`.
 
 ## Обновление образа
 
