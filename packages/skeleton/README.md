@@ -23,12 +23,40 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 | Файл | Режим |
 |---|---|
 | `.editorconfig` · `.gitattributes` · `.npmrc` · `.husky/pre-commit` · `.husky/pre-push` | точная копия эталона |
+| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже) |
 | `.gitignore` | managed-блок между маркерами `>>> omnifield-skeleton` — ниже блока репо дописывает своё |
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
-`nx.json` / `biome.json` / остальной `package.json` — создаются init'ом из шаблонов
-(только если отсутствуют), но НЕ drift-managed: репо легитимно расширяет пресеты
-(пример: python-таргеты brainer поверх `@omnifield/nx-preset`).
+`nx.json` / `biome.json` / `.devcontainer/devcontainer.json` / `devbox.services.json` /
+остальной `package.json` — создаются init'ом из шаблонов (только если отсутствуют), но
+НЕ drift-managed: репо легитимно расширяет пресеты (пример: python-таргеты brainer поверх
+`@omnifield/nx-preset`; набор dev-сервисов в `devbox.services.json` = зона продукт-owner'а).
+Плейсхолдер `__NAME__` в шаблонах init заменяет на `basename` репо (`package.json` name,
+devcontainer `--network-alias` — single-origin).
+
+## Dev-сервисы + вход агентом (brief `briefs/devbox-first-run-dx-design.md`)
+
+Скелет раздаёт **механизм** жизненного цикла dev-сервисов devbox; продукт только **декларирует**:
+
+- **`devbox.services.json`** (TEMPLATE, init-only) — декларация сервисов продукта: `name` · `cwd` ·
+  `command` · `port` (+ опц. `healthUrl`). `name` = join-key с product-manifest
+  (`reach.routes[].service`); `port` шлюзо-видимого сервиса = `reach.routes[].port` (single-origin —
+  апстрим по docker-сети `<alias>:<port>`, наружу не публикуется).
+- **`scripts/devbox-services.mjs`** (MANAGED, zero-deps) — оркестратор: `up`/`start`/`stop`/`restart`/
+  `status`/`run`/`logs`. Детач-старт (интерактив сохранён), pidfile+лог в `~/.devbox/`. Вшиты два
+  loud-fail'а: **G1** (сервис слушает `127.0.0.1` вместо `0.0.0.0` → сосед по docker-сети не
+  достучится, 502 → kill + fail-at-startup) и **G2** (литеральный ` -- ` перед `--host`/`--port`).
+- **`scripts/devbox-session.sh`** (MANAGED, exec `0755`) — вход одной командой: `devbox-session.sh
+  [scope]` резолвит devbox-контейнер репо → `docker exec -it -e OMNIFIELD_SCOPE=<scope> … claude`,
+  дёргает idempotent `devbox-services up` (safety-net). Тонкая инфра, про модель/роль не знает.
+- **Autostart** (`devcontainer.json`): `postStartCommand: devbox-services up` (VS Code-путь);
+  raw-run путь — стартовая команда контейнера + `--restart unless-stopped` (см. brief A4, devbox/README).
+- **Онбординг-seed** (`postCreateCommand`): idempotent-засев `.claude.json`
+  (`hasCompletedOnboarding`) — свежий volume не гонит экран регистрации (brief B8).
+
+**EXECUTABLE-подсет (B7):** managed-файлы с `exec: true` (`scripts/*.sh`) init материализует с
+`mode 0755` и чинит бит на каждом синке; `husky-pre-commit` дополнительно валит коммит, если у
+tracked `.sh` в index потерян бит (`mode ≠ 100755`) — правка через `\\wsl.localhost` его сбивает.
 
 ## Канон
 

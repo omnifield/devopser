@@ -1,0 +1,15 @@
+[
+  {
+    "name": "backend",
+    "cwd": "packages/backend",
+    "command": "uv run uvicorn app.main:app --host 0.0.0.0 --port 8010",
+    "port": 8010,
+    "healthUrl": "http://localhost:8010/health"
+  },
+  {
+    "name": "frontend",
+    "cwd": "packages/frontend",
+    "command": "pnpm run dev --host 0.0.0.0",
+    "port": 3500
+  }
+]

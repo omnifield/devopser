@@ -15,7 +15,7 @@
 // nx.json / biome.json — создаются init'ом, но НЕ drift-managed: репо легитимно
 // расширяет пресеты (пример: python-таргеты brainer).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,12 +29,18 @@ function printVersion() {
   console.log(`${name} ${version}`);
 }
 
+// exec: true → материализуется с mode 0755 (B7, brief devbox-first-run-dx: launcher теряет
+// exec-бит при правке через \\wsl.localhost → init ставит бит, husky-pre-commit его сторожит).
 const MANAGED = [
   { src: "editorconfig", dest: ".editorconfig" },
   { src: "gitattributes", dest: ".gitattributes" },
   { src: "npmrc", dest: ".npmrc" },
   { src: "husky-pre-commit", dest: ".husky/pre-commit" },
   { src: "husky-pre-push", dest: ".husky/pre-push" },
+  // dev-services оркестратор + session-launcher — чистый механизм (brief A2/A3/B6),
+  // drift-managed как husky: фикс обязан пропагироваться во все продукт-devbox'ы.
+  { src: "devbox-services.mjs", dest: "scripts/devbox-services.mjs" },
+  { src: "devbox-session.sh", dest: "scripts/devbox-session.sh", exec: true },
 ];
 
 const TEMPLATES = [
@@ -43,6 +49,9 @@ const TEMPLATES = [
   { src: "biome-template.json", dest: "biome.json" },
   { src: "dependabot-template.yml", dest: ".github/dependabot.yml" },
   { src: "devcontainer-template.json", dest: ".devcontainer/devcontainer.json" },
+  // Декларация dev-сервисов (brief A1): TEMPLATE init-only — набор сервисов = зона
+  // продукт-owner'а; скелет ставит пример, содержимое пишет продукт. НЕ drift-managed.
+  { src: "devbox.services.json", dest: "devbox.services.json" },
 ];
 
 const BLOCK_START =
@@ -53,9 +62,18 @@ const norm = (s) => s.replace(/\r\n/g, "\n");
 const readEtalon = (name) => norm(readFileSync(join(FILES, name), "utf8"));
 const readTarget = (p) => (existsSync(p) ? norm(readFileSync(p, "utf8")) : null);
 
-function writeLf(path, content) {
+function writeLf(path, content, exec = false) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content, "utf8");
+  if (exec) chmodSync(path, 0o755);
+}
+
+// Гарантируем exec-бит даже если контент уже совпал (init-путь, не check).
+// Возвращает true, если бит пришлось починить.
+function ensureExec(path) {
+  if ((statSync(path).mode & 0o777) === 0o755) return false;
+  chmodSync(path, 0o755);
+  return true;
 }
 
 function gitignoreBlock() {
@@ -92,16 +110,21 @@ function main() {
   const actions = [];
 
   // 1. Точные managed-копии.
-  for (const { src, dest } of MANAGED) {
+  for (const { src, dest, exec } of MANAGED) {
     const expected = readEtalon(src);
     const path = join(target, dest);
     const current = readTarget(path);
-    if (current === expected) continue;
-    if (check) drift.push(`${dest}: ${current === null ? "отсутствует" : "отличается от эталона"}`);
-    else {
-      writeLf(path, expected);
-      actions.push(`${dest}: ${current === null ? "создан" : "синкнут"}`);
+    if (current !== expected) {
+      if (check)
+        drift.push(`${dest}: ${current === null ? "отсутствует" : "отличается от эталона"}`);
+      else {
+        writeLf(path, expected, exec);
+        actions.push(`${dest}: ${current === null ? "создан" : "синкнут"}`);
+      }
     }
+    // exec-бит гарантируем независимо от совпадения контента (init-путь).
+    if (!check && exec && existsSync(path) && ensureExec(path))
+      actions.push(`${dest}: exec-бит (0755) починен`);
   }
 
   // 2. Managed-блок .gitignore.
@@ -149,11 +172,12 @@ function main() {
   }
 
   // 4. Остальные шаблоны — только init, только если отсутствуют.
+  // __NAME__ → basename(target): package.json name, devcontainer network-alias (single-origin).
   if (!check) {
     for (const { src, dest } of TEMPLATES.filter((t) => t.dest !== "package.json")) {
       const path = join(target, dest);
       if (existsSync(path)) continue;
-      writeLf(path, readEtalon(src));
+      writeLf(path, readEtalon(src).replaceAll("__NAME__", basename(target)));
       actions.push(`${dest}: создан из шаблона`);
     }
   }
