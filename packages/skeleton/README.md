@@ -42,6 +42,18 @@ devcontainer `--network-alias` — single-origin).
   `command` · `port` (+ опц. `healthUrl`). `name` = join-key с product-manifest
   (`reach.routes[].service`); `port` шлюзо-видимого сервиса = `reach.routes[].port` (single-origin —
   апстрим по docker-сети `<alias>:<port>`, наружу не публикуется).
+  **Шаблон init'а = `[]`** (пустая декларация → autostart = тихий no-op): набор сервисов пишет
+  продукт, скелет не навязывает чужие. Форма записи (JSON комментариев не держит — образец тут):
+
+  ```jsonc
+  [
+    // published-сервис ОБЯЗАН bind 0.0.0.0 (G1: сосед по docker-сети не видит 127.0.0.1 → 502);
+    // command БЕЗ литерального ` -- ` перед --host/--port (G2: pnpm/npm глотают его в свой парсер);
+    // name = docker-network-alias = join-key манифеста (liaison-inc1-manifest-boundary.md).
+    { "name": "backend",  "cwd": "packages/backend",  "command": "uv run uvicorn app.main:app --host 0.0.0.0 --port 8010", "port": 8010, "healthUrl": "http://localhost:8010/health" },
+    { "name": "frontend", "cwd": "packages/frontend", "command": "pnpm run dev --host 0.0.0.0",                              "port": 3500 }
+  ]
+  ```
 - **`scripts/devbox-services.mjs`** (MANAGED, zero-deps) — оркестратор: `up`/`start`/`stop`/`restart`/
   `status`/`run`/`logs`. Детач-старт (интерактив сохранён), pidfile+лог в `~/.devbox/`. Вшиты два
   loud-fail'а: **G1** (сервис слушает `127.0.0.1` вместо `0.0.0.0` → сосед по docker-сети не
