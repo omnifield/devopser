@@ -1,0 +1,40 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@omnifield/contract-manifest':
+        specifier: file:../../knowledger/contracts/manifest
+        version: file:../../knowledger/contracts/manifest
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.0
+
+packages:
+
+  '@omnifield/contract-manifest@file:../../knowledger/contracts/manifest':
+    resolution: {directory: ../../knowledger/contracts/manifest, type: directory}
+    engines: {node: '>=22.18'}
+
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
+snapshots:
+
+  '@omnifield/contract-manifest@file:../../knowledger/contracts/manifest':
+    dependencies:
+      zod: 3.25.76
+
+  yaml@2.9.0: {}
+
+  zod@3.25.76: {}

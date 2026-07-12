@@ -1,0 +1,18 @@
+{
+  "name": "@omnifield/hub-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ядро хаба воркспейса — скан omnifield.yaml → реестр → генерация gateway-маршрутов + лендинга (briefs/hub-core-design.md).",
+  "bin": {
+    "hub-core-generate": "./generate.mjs"
+  },
+  "scripts": {
+    "generate": "node generate.mjs",
+    "check": "node generate.mjs --check"
+  },
+  "dependencies": {
+    "@omnifield/contract-manifest": "file:../../knowledger/contracts/manifest",
+    "yaml": "^2.6.1"
+  }
+}
