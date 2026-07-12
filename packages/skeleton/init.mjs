@@ -122,9 +122,16 @@ function main() {
         actions.push(`${dest}: ${current === null ? "создан" : "синкнут"}`);
       }
     }
-    // exec-бит гарантируем независимо от совпадения контента (init-путь).
-    if (!check && exec && existsSync(path) && ensureExec(path))
-      actions.push(`${dest}: exec-бит (0755) починен`);
+    // exec-бит гарантируем независимо от совпадения контента (init-путь);
+    // в --check — сверяем его как дрейф (файл с совпавшим контентом, но 100644
+    // проходил бы зелёным, а launcher сломан: husky ловит, CI-drift был слеп).
+    if (exec && existsSync(path)) {
+      if (check) {
+        if ((statSync(path).mode & 0o777) !== 0o755) drift.push(`${dest}: exec-бит ≠ 0755`);
+      } else if (ensureExec(path)) {
+        actions.push(`${dest}: exec-бит (0755) починен`);
+      }
+    }
   }
 
   // 2. Managed-блок .gitignore.

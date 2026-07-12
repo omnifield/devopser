@@ -198,7 +198,10 @@ async function health(url) {
 // После старта: ждём слушателя до timeout, ловим G1 (loopback-bind) громко.
 function probeStartup(svc) {
   const t0 = Date.now();
-  const timeoutMs = 15000;
+  // Холодный vite/webpack-билд может превысить фикс-15s → ложный WARN. Дефолт 30s,
+  // настраиваемый env'ом (кривой/пустой ввод → дефолт, не 0). Семантику G1-die/детача НЕ трогаем.
+  const parsed = Number.parseInt(process.env.DEVBOX_PROBE_TIMEOUT_MS ?? "", 10);
+  const timeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 30000;
   for (;;) {
     const bind = probeBind(svc.port);
     if (bind === "all") return { ok: true };
