@@ -1,13 +1,16 @@
 # dev-gateway — single-origin вход dev-машины + хаб
-# (briefs/gateway-hub-single-origin.md; заказчик — brainer, решение user:
-# прямые порты уходят из рабочего флоу, dev = тот же nginx-флоу, что прод).
+# (gateway-hub-single-origin.md + gateway-network-single-origin.md).
 #
+# Пререквизит — внешняя сеть (один раз на машину; devbox'ы создают её сами через
+# initializeCommand, для standalone-compose создай явно):
+#   docker network create omnifield-gateway
 # Запуск:  docker compose up -d   (из этой директории)
 # Вход:    http://localhost:8080/ — хаб; маршруты — nginx.conf.
-# Порт 8080 — registry/ports.md (контракт; переехал из капсулы оракула).
 #
-# Порты продуктов (3500/8010, …) — ВНУТРЕННЯЯ деталь (nginx targets):
-# в UX/доках не фигурируют, source of truth — registry/ports.md.
+# Порт 8080 — ЕДИНСТВЕННАЯ хост-публикация всей системы (registry/ports.md; контракт).
+# Апстримы продуктов (brainer:3500/8010, weber:5173) — по docker-сети
+# omnifield-gateway, alias = network-alias продукт-devbox'а (= имя репо); НЕ
+# host.docker.internal и НЕ per-service -p (gateway-network-single-origin.md).
 services:
   gateway:
     image: nginx:1.29-alpine
@@ -15,9 +18,12 @@ services:
     restart: unless-stopped
     ports:
       - "8080:80"
-    extra_hosts:
-      # linux-parity; Docker Desktop даёт host.docker.internal и так (П-докер-1)
-      - "host.docker.internal:host-gateway"
+    networks:
+      - omnifield-gateway
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./hub:/usr/share/nginx/html:ro
+
+networks:
+  omnifield-gateway:
+    external: true
