@@ -26,7 +26,7 @@ REPO=$(basename "$REPO_ROOT")
 
 # --- резолвим контейнер репо ----------------------------------------------
 # 1) по имени-конвенции (raw-run / workstation-oa); 2) по метке VS Code devcontainer.
-CONTAINER="omnifield-devbox-$REPO"
+CONTAINER="${REPO}-devbox"
 if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
   CONTAINER=$(docker ps -aq --filter "label=devcontainer.local_folder=$REPO_ROOT" | head -n1 || true)
 fi
@@ -34,7 +34,7 @@ if [ -z "$CONTAINER" ]; then
   echo "✖ devbox-контейнер для '$REPO' не найден."
   echo "  Подними его одним из путей входа (brief A4):"
   echo "    • VS Code: «Reopen in Container» (.devcontainer/devcontainer.json)"
-  echo "    • raw:     docker run … --name omnifield-devbox-$REPO --network $NETWORK --network-alias $REPO … (без -p; см. devbox/README)"
+  echo "    • raw:     docker run … --name ${REPO}-devbox --network $NETWORK --network-alias $REPO … (без -p; см. devbox/README)"
   exit 1
 fi
 
