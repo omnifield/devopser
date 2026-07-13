@@ -3,50 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Omnifield — хаб</title>
+<title>Omnifield — воркспейс</title>
 <style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 3rem 1.5rem;
-    display: flex; justify-content: center;
-    background: Canvas; color: CanvasText;
-  }
-  main { width: 100%; max-width: 640px; }
-  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
-  p.sub { margin: 0 0 2rem; opacity: .65; font-size: .9rem; }
-  ul { list-style: none; margin: 0; padding: 0; }
-  li a {
-    display: flex; justify-content: space-between; align-items: baseline;
-    gap: 1rem; padding: .8rem 1rem; margin-bottom: .5rem;
-    border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
-    border-radius: .5rem; text-decoration: none; color: inherit;
-  }
-  li a:hover { border-color: color-mix(in srgb, CanvasText 45%, transparent); }
-  li a b { font-weight: 600; }
-  li a small { opacity: .6; }
-  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
-       opacity: .55; margin: 2rem 0 .75rem; }
+  :root { color-scheme: light dark; --bg:#0d1117; --fg:#e6edf3; --card:#161b22; --br:#30363d; --acc:#58a6ff; }
+  * { box-sizing:border-box; } body { margin:0; font:16px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:2.5rem 1.5rem 1rem; } header h1 { margin:0; font-size:1.8rem; } header p { margin:.3rem 0 0; opacity:.6; }
+  main.grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); padding:1.5rem; max-width:1100px; }
+  .card { display:block; padding:1.1rem 1.2rem; background:var(--card); border:1px solid var(--br); border-radius:12px; text-decoration:none; color:inherit; transition:border-color .15s; }
+  .card:hover { border-color:var(--acc); }
+  .card h2 { margin:0 0 .2rem; font-size:1.15rem; } .tag { margin:0; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; opacity:.55; }
+  .desc { margin:.5rem 0 .7rem; opacity:.85; font-size:.92rem; } .card code { font-size:.82rem; color:var(--acc); }
+  footer { padding:1rem 1.5rem 2.5rem; opacity:.4; font-size:.8rem; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Omnifield — хаб</h1>
-  <p class="sub">Одна точка входа dev-машины (stacks/gateway). MVP-статика;
-     registry-driven генерация — потом.</p>
-
-  <h2>Продукты (за gateway)</h2>
-  <ul>
-    <li><a href="/brainer/"><b>brainer</b> <small>дашборд · /brainer/</small></a></li>
-    <li><a href="/api/brainer/"><b>brainer API</b> <small>/api/brainer/</small></a></li>
-    <li><a href="/sandbox/"><b>weber sandbox</b> <small>полигон фреймворка · /sandbox/</small></a></li>
-  </ul>
-
-  <h2>Инфра (пока на портах — фаза 2 заведёт за origin)</h2>
-  <ul>
-    <li><a href="http://localhost:3333/"><b>Grafana</b> <small>Agent Fleet · :3333</small></a></li>
-    <li><a href="http://localhost:9090/"><b>Prometheus</b> <small>:9090</small></a></li>
-    <li><a href="https://localhost:9443/"><b>Portainer</b> <small>пульт докера · :9443</small></a></li>
-  </ul>
-</main>
+  <header><h1>Omnifield</h1><p>Воркспейс · 2 продукт(ов) · единая дверь :8080</p></header>
+  <main class="grid">
+      <a class="card" href="/brainer">
+        <h2>Brainer</h2>
+        <p class="tag">fullstack</p>
+        <p class="desc">Пульт агентов — карта и спавн Claude-сессий (продукт, втягивается в хаб)</p>
+        <code>/brainer</code>
+      </a>
+      <a class="card" href="/weber">
+        <h2>Weber</h2>
+        <p class="tag">frontend</p>
+        <p class="desc">Веб-редактор карточек знаний</p>
+        <code>/weber</code>
+      </a>
+  </main>
+  <footer>GENERATED hub-core — реестр из omnifield.yaml. Канал (ops) — Portainer.</footer>
 </body>
 </html>
