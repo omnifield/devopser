@@ -13,6 +13,17 @@ git-операции и сессии живут в этом контейнере
 bind-mount рабочей папки** (файлы на
 машине; Windows — клон в WSL2 FS, bind родного NTFS медленный). Пути входа:
 
+0. **Headless-провижинер (канон, рекомендация)** — `scripts/devbox.sh up` поднимает devbox
+   репо из его `.devcontainer/devcontainer.json` по канону ОДНОЙ командой (без ручных
+   `docker run`): единственный bind своего репо, сеть `omnifield-gateway` alias=имя,
+   ноль host-портов, `--restart unless-stopped`. `down` удаляет контейнер (volumes/данные
+   переживают), `recreate` = `down`+`up`. На хосте нужен только `docker`; манифест парсит
+   node внутри образа (`scripts/devbox-manifest.mjs`). См. `briefs/devbox-provision-lifecycle.md`.
+   ```sh
+   scripts/devbox.sh up        # создать+запустить (идемпотентно)
+   scripts/devbox.sh recreate  # пересоздать, данные сохранить
+   scripts/devbox.sh down      # удалить контейнер (volumes целы)
+   ```
 1. **Чистая машина (git на хост НЕ ставится)** — клон изнутри контейнера в
    примонтированную папку, затем вход любым способом ниже:
    ```sh
