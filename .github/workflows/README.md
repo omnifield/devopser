@@ -114,7 +114,11 @@ sqlc его не обязан иметь). Версии инструментов
 - **`.golangci.yml` — schema v2**: workflow ставит golangci-lint **v2** (`golangci-lint-action@v7`),
   конфиг v1-формата не заведётся. Эталон конфига — `packages/skeleton/files/go/golangci-template.yml`.
   `gofumpt` в v2 — секция `formatters`, не `linters`.
-- **`sqlc-drift`** — гейт по наличию `sqlc.yaml`/`sqlc.yml`: есть → `sqlc generate` (пин v1.27.0
+- **golangci — `install-mode: goinstall`**: пребилт-бинарь линтера собран более старым Go и
+  ОТКАЗЫВАЕТСЯ линтить `go.mod` с более новой директивой `go` (наша каденция bleeding-edge, 1.26:
+  `Go language version (go1.24) … lower than targeted (1.26)`). goinstall собирает линтер тулчейном
+  репо → версии сходятся. Для нашей каденции goinstall — канон, не костыль.
+- **`sqlc-drift`** — гейт по наличию `sqlc.yaml`/`sqlc.yml`: есть → `sqlc generate` (пин v1.31.1
   через `go install`) + `git diff --exit-code`; нет → шаг пропущен (не форсим sqlc на продукт
   без БД-слоя). Красный = сгенерированный код рассинхронен: прогнать `sqlc generate`, закоммитить.
 - **permissions caller = только `contents: read`**: go-флоу не дёргает nx-set-shas и не тянет
