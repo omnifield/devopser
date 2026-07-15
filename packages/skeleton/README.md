@@ -1,8 +1,25 @@
 # @omnifield/skeleton — эталон вендоренных файлов + init/sync/drift-check
 
-Repo-skeleton D3 (`briefs/repo-skeleton-product.md`). Файлы, обязанные лежать копией
+Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанность
+(`briefs/skeleton-stack-aware-sync.md`, Шаг 1). Файлы, обязанные лежать копией
 в каждом продукт-репо, живут эталоном в `files/`; `init.mjs` их материализует,
-синкает и сверяет. Zero-deps (только `node:*`).
+синкает и сверяет — **по СТЕКУ репо**, не по имени. Zero-deps (только `node:*`).
+
+## Стек репо (node / go / frontend)
+
+`init.mjs` ветвится по стеку, не по имени продукта. Стек — из
+`platform/repo-flow.json` (`"<repo>": { "stack": ["go","frontend"] }`); при отсутствии
+записи (или запуске из published-пакета, где `platform/` нет) — **фолбэк-детект по фактам**
+(`go.mod`→go, `package.json`→node). Источник правды — конфиг.
+
+| Стек | Что раскатывается сверх общего набора |
+|---|---|
+| `node` / `frontend` | `nx.json` · `biome.json` · `.github/dependabot.yml` · `package.json` (+пины) · CI-caller `node` job (`node-ci.yml`) |
+| `go` | `.golangci.yml` · `sqlc.yaml` (init-only, продукт правит) · CI-caller `go` job (`go-ci.yml`) |
+| любой | `.editorconfig`/`.gitattributes`/`.npmrc`/`.husky/*`/`devbox-*`/`.gitignore`-блок/`.devcontainer`/`devbox.services.json` · `pr-title.yml` |
+
+Мульти-стек (напр. `["go","frontend"]`) — объединение: `ci.yml` получает оба job'а,
+`permissions` — объединение канонов reusable (go: `contents:read`; node: +`actions`+`packages`).
 
 ## Команды
 
@@ -28,9 +45,12 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
 `nx.json` / `biome.json` / `.devcontainer/devcontainer.json` / `devbox.services.json` /
+`.golangci.yml` / `sqlc.yaml` / CI-caller'ы (`.github/workflows/ci.yml` + `pr-title.yml`) /
 остальной `package.json` — создаются init'ом из шаблонов (только если отсутствуют), но
 НЕ drift-managed: репо легитимно расширяет пресеты (пример: python-таргеты brainer поверх
-`@omnifield/nx-preset`; набор dev-сервисов в `devbox.services.json` = зона продукт-owner'а).
+`@omnifield/nx-preset`; набор dev-сервисов в `devbox.services.json` = зона продукт-owner'а;
+пути/движок БД в `sqlc.yaml` — зона go-owner'а). CI-caller'ы init-only, чтобы догфуд-ci
+devopser (локальный `uses: ./...`) не конфликтовал с раскатанным `@main`-caller'ом.
 Плейсхолдер `__NAME__` в шаблонах init заменяет на `basename` репо (`package.json` name,
 devcontainer `--network-alias` — single-origin).
 
