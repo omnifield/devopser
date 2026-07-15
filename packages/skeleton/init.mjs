@@ -294,7 +294,8 @@ function main() {
   if (actions.length) {
     console.log(`[skeleton init] ${target}:`);
     for (const a of actions) console.log(`  - ${a}`);
-    console.log("Дальше: pnpm install (поставит husky prepare-хуком).");
+    // husky ставится pnpm prepare-хуком → хинт только node/frontend-репо (у go-репо pnpm нет).
+    if (hasNode) console.log("Дальше: pnpm install (поставит husky prepare-хуком).");
   } else {
     console.log("[skeleton init] всё уже в актуале, изменений нет.");
   }
