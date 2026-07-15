@@ -4,13 +4,16 @@
 #
 # Пути ниже — канон-layout go-сервиса (migrations/ · internal/), не имя продукта:
 # продукт меняет их под себя, механизм на них не завязан.
+#
+# БД = конфиг продукта (knowledger go.md §Данные): дефолт — sqlite (тесты на реальном
+# SQLite, продукты — sqlite). postgres — drop-in-таргет: engine: "postgresql" +
+# gen.go.sql_package: "pgx/v5", остальное без правок.
 version: "2"
 sql:
-  - engine: "postgresql"
+  - engine: "sqlite"
     schema: "migrations"                 # каталог goose-миграций (канон-layout)
     queries: "internal/store/queries"    # *.sql с аннотациями sqlc
     gen:
       go:
         package: "store"
         out: "internal/store"
-        sql_package: "pgx/v5"            # канон-драйвер экосистемы

@@ -12,7 +12,7 @@ Reusable CI, который это гоняет — `.github/workflows/go-ci.yml
 | Шаблон | Кладётся как | Что |
 |---|---|---|
 | `golangci-template.yml` | `.golangci.yml` | baseline линтеров (schema v2): `errcheck, govet, staticcheck, unused, ineffassign, misspell, gocritic, revive` + `gofumpt`-форматтер |
-| `sqlc-template.yaml` | `sqlc.yaml` | канон-форма sqlc (postgresql · pgx/v5); продукт правит пути — go-ci читает файл вызывателя |
+| `sqlc-template.yaml` | `sqlc.yaml` | канон-форма sqlc; дефолт `engine: sqlite` (БД = конфиг продукта, postgres — drop-in-таргет), продукт правит пути — go-ci читает файл вызывателя |
 
 ## Канон-layout go-сервиса (минимальный)
 

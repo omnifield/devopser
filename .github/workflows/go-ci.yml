@@ -51,7 +51,7 @@ jobs:
           /tmp/gitleaks detect --source . --redact --no-banner
       # Версия Go — из пина вызывателя (go.mod), не отсюда. check-latest: false —
       # берём ровно запинённую, не подтягиваем свежак молча.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: false
