@@ -83,8 +83,9 @@ jobs:
           else
             echo "sqlc.yaml нет → sqlc-drift пропущен (продукт не использует sqlc)."
           fi
-      # D3: дрейф вендоренных skeleton-копий (в т.ч. .golangci.yml / sqlc.yaml) виден сразу;
-      # синк — явной командой init.mjs, не молча.
+      # D3: дрейф ОБЩЕГО managed-набора (editorconfig/gitattributes/husky/devbox-*/gitignore-блок)
+      # виден сразу; синк — явной командой init.mjs, не молча. Go-шаблоны (.golangci.yml / sqlc.yaml)
+      # — init-only/product-owned (продукт правит пути/линтеры), --check их НЕ сверяет.
       - name: skeleton drift-check
         if: ${{ inputs.drift-check }}
         uses: omnifield/devopser/.github/actions/drift-check@main

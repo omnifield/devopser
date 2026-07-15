@@ -1,19 +1,27 @@
 #!/usr/bin/env node
 // init.mjs — материализация / синк / drift-check skeleton-набора devopser
-// (briefs/repo-skeleton-product.md D3). Zero-deps, только node:*.
+// (briefs/repo-skeleton-product.md D3 + briefs/skeleton-stack-aware-sync.md, Шаг 1).
+// Zero-deps, только node:*.
 //
-//   node init.mjs [target]           — init/sync: вендорит managed-набор, создаёт
-//                                      package.json/nx.json/biome.json из шаблонов
-//                                      (только если отсутствуют), чинит пины.
+//   node init.mjs [target]           — init/sync: вендорит managed-набор ПО СТЕКУ репо,
+//                                      создаёт stack-шаблоны (только если отсутствуют),
+//                                      чинит пины, раскатывает CI-caller'ы per stack.
 //   node init.mjs --check [target]   — drift-check: ничего не пишет, exit 1 + список
 //                                      расхождений (шаг reusable CI, action drift-check).
 //
+// СТЕК репо (node / go / frontend; репо может быть мульти-стек, напр. go+frontend) —
+// источник правды platform/repo-flow.json (поле `stack`), фолбэк — детект по фактам
+// репо (go.mod→go, package.json→node). Ветвление — ПО СТЕКУ, НЕ по имени репо
+// (north-star брифа): go-путь работает для любого go-репо, node — для любого node.
+//
 // Managed-набор (сверяется drift-check'ом; синк — только явной командой, не молча):
-//   .editorconfig / .gitattributes / .npmrc / .husky/pre-commit — точная копия эталона;
-//   .gitignore — managed-блок между маркерами (ниже блока репо дописывает своё);
-//   package.json — пины packageManager + engines.node равны эталону.
-// nx.json / biome.json — создаются init'ом, но НЕ drift-managed: репо легитимно
-// расширяет пресеты (пример: python-таргеты brainer).
+//   общий (все стеки): .editorconfig / .gitattributes / .npmrc / .husky/* / devbox-* /
+//                      .gitignore managed-блок;  node/frontend: package.json пины.
+// Init-only (создаются, если отсутствуют; НЕ drift-managed — репо легитимно правит):
+//   общий: .devcontainer / devbox.services.json / CI-caller'ы (ci.yml + pr-title.yml);
+//   node/frontend: nx.json / biome.json / dependabot;  go: .golangci.yml / sqlc.yaml.
+// nx.json / biome.json — репо расширяет пресеты (пример: python-таргеты brainer);
+// go-шаблоны — продукт правит пути/движок БД (sqlite→postgres drop-in).
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -21,6 +29,9 @@ import { fileURLToPath } from "node:url";
 
 const PKG_DIR = dirname(fileURLToPath(import.meta.url));
 const FILES = join(PKG_DIR, "files");
+// devopser-side конфиг стеков; при запуске из published-пакета (node_modules) его нет →
+// фолбэк на детект. Источник правды, когда доступен.
+const REPO_FLOW = join(PKG_DIR, "..", "..", "platform", "repo-flow.json");
 
 // К2-guard (briefs/repo-skeleton-product.md): печатаем свою версию при старте —
 // тихий откат эталона (stale dist-tag) становится видимым в логе синка/CI.
@@ -31,6 +42,7 @@ function printVersion() {
 
 // exec: true → материализуется с mode 0755 (B7, brief devbox-first-run-dx: launcher теряет
 // exec-бит при правке через \\wsl.localhost → init ставит бит, husky-pre-commit его сторожит).
+// Общий набор — для ВСЕХ стеков (brief §1: editorconfig/gitattributes/husky/devbox-*).
 const MANAGED = [
   { src: "editorconfig", dest: ".editorconfig" },
   { src: "gitattributes", dest: ".gitattributes" },
@@ -43,16 +55,30 @@ const MANAGED = [
   { src: "devbox-session.sh", dest: "scripts/devbox-session.sh", exec: true },
 ];
 
-const TEMPLATES = [
-  { src: "package-template.json", dest: "package.json" },
+// Init-only шаблоны. Общий — devbox-инфра всем стекам; node/go — по стеку репо.
+const COMMON_TEMPLATES = [
+  { src: "devcontainer-template.json", dest: ".devcontainer/devcontainer.json" },
+  // Декларация dev-сервисов (brief A1): набор сервисов = зона продукт-owner'а;
+  // скелет ставит пустой пример ([]), содержимое пишет продукт.
+  { src: "devbox.services.json", dest: "devbox.services.json" },
+];
+const NODE_TEMPLATES = [
   { src: "nx-template.json", dest: "nx.json" },
   { src: "biome-template.json", dest: "biome.json" },
   { src: "dependabot-template.yml", dest: ".github/dependabot.yml" },
-  { src: "devcontainer-template.json", dest: ".devcontainer/devcontainer.json" },
-  // Декларация dev-сервисов (brief A1): TEMPLATE init-only — набор сервисов = зона
-  // продукт-owner'а; скелет ставит пример, содержимое пишет продукт. НЕ drift-managed.
-  { src: "devbox.services.json", dest: "devbox.services.json" },
 ];
+const GO_TEMPLATES = [
+  { src: "go/golangci-template.yml", dest: ".golangci.yml" },
+  { src: "go/sqlc-template.yaml", dest: "sqlc.yaml" },
+];
+
+// CI-caller per stack: go→go-ci.yml, node/frontend→node-ci.yml. pr-title — всем.
+// permissions — по канону каждого reusable (go: contents:read; node: +actions,+packages).
+const CI_JOB = {
+  go: { name: "go", reusable: "go-ci.yml" },
+  node: { name: "node", reusable: "node-ci.yml" },
+};
+const PERM_ORDER = ["contents: read", "actions: read", "packages: read"];
 
 const BLOCK_START =
   "# >>> omnifield-skeleton (managed by devopser; синк: init.mjs, не редактировать руками) >>>";
@@ -76,11 +102,51 @@ function ensureExec(path) {
   return true;
 }
 
+// --- Стек репо ---------------------------------------------------------------
+
+// Детект по фактам репо — фолбэк, когда repo-flow.json недоступен/без записи.
+function detectStacks(target) {
+  const s = [];
+  if (existsSync(join(target, "go.mod"))) s.push("go");
+  if (existsSync(join(target, "package.json"))) s.push("node");
+  return s.length ? s : ["node"]; // пустой репо — безопасный дефолт (текущее поведение)
+}
+
+// Источник правды — repo-flow.json[<basename>].stack; иначе детект.
+function resolveStacks(target) {
+  const name = basename(target);
+  if (existsSync(REPO_FLOW)) {
+    const st = JSON.parse(readFileSync(REPO_FLOW, "utf8"))[name]?.stack;
+    if (Array.isArray(st) && st.length) return { stacks: st, source: `repo-flow.json[${name}]` };
+  }
+  return { stacks: detectStacks(target), source: "детект (facts)" };
+}
+
+// Сборка ci.yml-caller по стеку: один job на reusable, permissions — объединение канонов.
+function buildCiYml({ hasGo, hasNode }) {
+  const jobs = [];
+  const perms = new Set(["contents: read"]);
+  if (hasGo) jobs.push(CI_JOB.go);
+  if (hasNode) {
+    jobs.push(CI_JOB.node);
+    perms.add("actions: read");
+    perms.add("packages: read");
+  }
+  const permStr = PERM_ORDER.filter((p) => perms.has(p)).join(", ");
+  const head = readEtalon("ci-caller/head.yml").replace("__PERMISSIONS__", permStr);
+  const body = jobs
+    .map((j) => `  ${j.name}:\n    uses: omnifield/devopser/.github/workflows/${j.reusable}@main\n`)
+    .join("");
+  return head + body;
+}
+
+// --- .gitignore managed-блок -------------------------------------------------
+
 function gitignoreBlock() {
   return `${BLOCK_START}\n${readEtalon("gitignore-block").trimEnd()}\n${BLOCK_END}\n`;
 }
 
-// Возвращает { current, expected } содержимого .gitignore после синка блока.
+// Возвращает { expected } содержимого .gitignore после синка блока.
 function spliceGitignore(current) {
   const block = gitignoreBlock();
   if (current === null) return { expected: block };
@@ -106,10 +172,14 @@ function main() {
   const args = process.argv.slice(2);
   const check = args.includes("--check");
   const target = resolve(args.filter((a) => !a.startsWith("--"))[0] ?? ".");
+  const { stacks, source } = resolveStacks(target);
+  const hasNode = stacks.some((s) => s === "node" || s === "frontend");
+  const hasGo = stacks.includes("go");
+  console.log(`[skeleton] стек: [${stacks.join(", ")}] (${source})`);
   const drift = [];
   const actions = [];
 
-  // 1. Точные managed-копии.
+  // 1. Точные managed-копии (общий набор, все стеки).
   for (const { src, dest, exec } of MANAGED) {
     const expected = readEtalon(src);
     const path = join(target, dest);
@@ -134,7 +204,7 @@ function main() {
     }
   }
 
-  // 2. Managed-блок .gitignore.
+  // 2. Managed-блок .gitignore (общий).
   const giPath = join(target, ".gitignore");
   const giCurrent = readTarget(giPath);
   const { expected: giExpected } = spliceGitignore(giCurrent);
@@ -149,43 +219,62 @@ function main() {
     }
   }
 
-  // 3. package.json: шаблон (если нет) либо пины.
-  const pkgPath = join(target, "package.json");
-  const pkgRaw = readTarget(pkgPath);
-  const { packageManager, node } = pins();
-  if (pkgRaw === null) {
-    if (check) drift.push("package.json: отсутствует");
-    else {
-      const tpl = readEtalon("package-template.json").replace("__NAME__", basename(target));
-      writeLf(pkgPath, tpl);
-      actions.push("package.json: создан из шаблона");
-    }
-  } else {
-    const pkg = JSON.parse(pkgRaw);
-    const bad = [];
-    if (pkg.packageManager !== packageManager)
-      bad.push(`packageManager: ${pkg.packageManager ?? "нет"} → ${packageManager}`);
-    if (pkg.engines?.node !== node)
-      bad.push(`engines.node: ${pkg.engines?.node ?? "нет"} → ${node}`);
-    if (bad.length) {
-      if (check) drift.push(`package.json пины: ${bad.join("; ")}`);
+  // 3. package.json пины — только node/frontend-стек (go-репо package.json не несёт).
+  if (hasNode) {
+    const pkgPath = join(target, "package.json");
+    const pkgRaw = readTarget(pkgPath);
+    const { packageManager, node } = pins();
+    if (pkgRaw === null) {
+      if (check) drift.push("package.json: отсутствует");
       else {
-        pkg.packageManager = packageManager;
-        pkg.engines = { ...pkg.engines, node };
-        writeLf(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-        actions.push(`package.json: пины починены (${bad.join("; ")})`);
+        const tpl = readEtalon("package-template.json").replace("__NAME__", basename(target));
+        writeLf(pkgPath, tpl);
+        actions.push("package.json: создан из шаблона");
+      }
+    } else {
+      const pkg = JSON.parse(pkgRaw);
+      const bad = [];
+      if (pkg.packageManager !== packageManager)
+        bad.push(`packageManager: ${pkg.packageManager ?? "нет"} → ${packageManager}`);
+      if (pkg.engines?.node !== node)
+        bad.push(`engines.node: ${pkg.engines?.node ?? "нет"} → ${node}`);
+      if (bad.length) {
+        if (check) drift.push(`package.json пины: ${bad.join("; ")}`);
+        else {
+          pkg.packageManager = packageManager;
+          pkg.engines = { ...pkg.engines, node };
+          writeLf(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+          actions.push(`package.json: пины починены (${bad.join("; ")})`);
+        }
       }
     }
   }
 
-  // 4. Остальные шаблоны — только init, только если отсутствуют.
+  // 4. Init-only шаблоны — по стеку, только если отсутствуют. НЕ drift-managed.
   // __NAME__ → basename(target): package.json name, devcontainer network-alias (single-origin).
   if (!check) {
-    for (const { src, dest } of TEMPLATES.filter((t) => t.dest !== "package.json")) {
+    const templates = [
+      ...COMMON_TEMPLATES,
+      ...(hasNode ? NODE_TEMPLATES : []),
+      ...(hasGo ? GO_TEMPLATES : []),
+    ];
+    for (const { src, dest } of templates) {
       const path = join(target, dest);
       if (existsSync(path)) continue;
       writeLf(path, readEtalon(src).replaceAll("__NAME__", basename(target)));
       actions.push(`${dest}: создан из шаблона`);
+    }
+
+    // 5. CI-caller'ы per stack (init-only): ci.yml по стеку + pr-title всем.
+    const ciPath = join(target, ".github/workflows/ci.yml");
+    if (!existsSync(ciPath)) {
+      writeLf(ciPath, buildCiYml({ hasGo, hasNode }));
+      actions.push(".github/workflows/ci.yml: создан (caller per stack)");
+    }
+    const prPath = join(target, ".github/workflows/pr-title.yml");
+    if (!existsSync(prPath)) {
+      writeLf(prPath, readEtalon("ci-caller/pr-title.yml"));
+      actions.push(".github/workflows/pr-title.yml: создан (caller)");
     }
   }
 
@@ -205,7 +294,8 @@ function main() {
   if (actions.length) {
     console.log(`[skeleton init] ${target}:`);
     for (const a of actions) console.log(`  - ${a}`);
-    console.log("Дальше: pnpm install (поставит husky prepare-хуком).");
+    // husky ставится pnpm prepare-хуком → хинт только node/frontend-репо (у go-репо pnpm нет).
+    if (hasNode) console.log("Дальше: pnpm install (поставит husky prepare-хуком).");
   } else {
     console.log("[skeleton init] всё уже в актуале, изменений нет.");
   }
