@@ -1,0 +1,16 @@
+# Канон-форма sqlc для go-продукта (schema v2). Вендорится копией; продукт правит
+# пути под свою структуру — reusable go-ci.yml читает ИМЕННО этот файл вызывателя,
+# в CI пины версии sqlc — в шапке go-ci.yml (tools), не тут.
+#
+# Пути ниже — канон-layout go-сервиса (migrations/ · internal/), не имя продукта:
+# продукт меняет их под себя, механизм на них не завязан.
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "migrations"                 # каталог goose-миграций (канон-layout)
+    queries: "internal/store/queries"    # *.sql с аннотациями sqlc
+    gen:
+      go:
+        package: "store"
+        out: "internal/store"
+        sql_package: "pgx/v5"            # канон-драйвер экосистемы

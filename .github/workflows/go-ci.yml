@@ -1,0 +1,90 @@
+# Reusable CI для go-репо экосистемы (Foundation Шаг 0, briefs/home-go-canon-mechanisms.md).
+# Зеркалит node-ci.yml один-в-один, но для go-пинов. Потребитель держит ~5-строчный caller:
+#   uses: omnifield/devopser/.github/workflows/go-ci.yml@main
+# Сниппеты caller'ов и грабли — README.md рядом.
+#
+# Версия Go — ТОЛЬКО из пина репо-вызывателя (канон toolchain-pins):
+#   setup-go с go-version-file: go.mod, check-latest: false. Никакого хардкода версии Go.
+#
+# tools (пины инструментов — здесь, НЕ хардкод в каждом продукте; бампим через architect):
+#   golangci-lint — v2.1.6  (schema v2; конфиг .golangci.yml лежит у потребителя)
+#   sqlc          — v1.27.0  (ставится go install только когда у потребителя есть sqlc.yaml)
+#   gitleaks      — v8.30.1  (тот же пин, что node-ci — секрет-скан общий)
+#   goose         — v3.24.0  (канон-инструмент миграций; в CI не гоняется, пин для продуктов)
+#
+# permissions задаёт CALLER — reusable не может расширить права сам: минимум contents: read
+#   (нужен и для checkout, и для полной истории gitleaks). Go-флоу не тянет @omnifield-пакеты
+#   и nx-set-shas → actions:read / packages:read здесь НЕ нужны (в отличие от node-ci).
+name: Go CI (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      drift-check:
+        description: 'Сверка вендоренных skeleton-копий с эталоном devopser (D3); выключать только на переходный период'
+        type: boolean
+        required: false
+        default: true
+      secret-scan:
+        description: 'gitleaks по всей git-истории (репо публичные — токены ловит CI); выключать только с решением architect'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  go:
+    # Один job со шагами (как node-ci): один checkout + один setup-go, кэш общий.
+    name: Go (build · vet · test -race · golangci-lint · sqlc-drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # gitleaks сканит всю историю → полная глубина.
+          fetch-depth: 0
+      # Репо публичные: секреты в вечной истории ловит CI, не глаза. --redact —
+      # находки не светятся в логах. Версия запинена (канон toolchain-pins).
+      - name: secret-scan (gitleaks)
+        if: ${{ inputs.secret-scan }}
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --no-banner
+      # Версия Go — из пина вызывателя (go.mod), не отсюда. check-latest: false —
+      # берём ровно запинённую, не подтягиваем свежак молча.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: false
+      - name: build
+        run: go build ./...
+      - name: vet
+        run: go vet ./...
+      # -race ловит гонки; конфиг линтеров — .golangci.yml потребителя (schema v2),
+      # здесь только запуск с пином версии линтера (из tools выше).
+      - name: test (race)
+        run: go test -race ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.1.6
+      # sqlc-drift: сгенерированный код обязан быть в синхроне с queries/schema.
+      # Гейт по наличию sqlc.yaml — продукт без sqlc не обязан его иметь (шаг = тихий skip),
+      # ноль продуктовой заточки. Пути sqlc читает из sqlc.yaml вызывателя, не отсюда.
+      - name: sqlc-drift
+        run: |
+          if ls sqlc.yaml sqlc.yml >/dev/null 2>&1; then
+            echo "sqlc.yaml найден → sqlc generate + проверка синхрона"
+            go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+            "$(go env GOPATH)/bin/sqlc" generate
+            if ! git diff --exit-code; then
+              echo "::error::sqlc drift — сгенерированный код рассинхронен. Прогони 'sqlc generate' и закоммить."
+              exit 1
+            fi
+          else
+            echo "sqlc.yaml нет → sqlc-drift пропущен (продукт не использует sqlc)."
+          fi
+      # D3: дрейф вендоренных skeleton-копий (в т.ч. .golangci.yml / sqlc.yaml) виден сразу;
+      # синк — явной командой init.mjs, не молча.
+      - name: skeleton drift-check
+        if: ${{ inputs.drift-check }}
+        uses: omnifield/devopser/.github/actions/drift-check@main
