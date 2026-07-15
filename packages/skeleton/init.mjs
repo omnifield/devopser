@@ -60,6 +60,9 @@ const MANAGED = [
   { src: "devbox-session.sh", dest: "scripts/devbox-session.sh", exec: true },
   { src: "devbox.sh", dest: "scripts/devbox.sh", exec: true },
   { src: "devbox-manifest.mjs", dest: "scripts/devbox-manifest.mjs" },
+  // publish-volume (Шаг 5 §A): чистый механизм публикации манифеста в registry-volume —
+  // drift-managed, фикс обязан пропагироваться во все продукт-devbox'ы (как devbox-services).
+  { src: "devbox-publish.mjs", dest: "scripts/devbox-publish.mjs" },
 ];
 
 // Init-only шаблоны. Общий — devbox-инфра всем стекам; node/go — по стеку репо.

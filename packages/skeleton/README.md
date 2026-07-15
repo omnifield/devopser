@@ -45,7 +45,7 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 | Файл | Режим |
 |---|---|
 | `.editorconfig` · `.gitattributes` · `.npmrc` · `.husky/pre-commit` · `.husky/pre-push` | точная копия эталона |
-| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/devbox-manifest.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже) |
+| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/devbox-manifest.mjs` · `scripts/devbox-publish.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже) |
 | `.gitignore` | managed-блок между маркерами `>>> omnifield-skeleton` — ниже блока репо дописывает своё |
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
@@ -93,8 +93,18 @@ devcontainer `--network-alias` — single-origin).
   `--restart unless-stopped`, ноль host-портов) ставит сам провизионер; продукт-переменное
   (image/env/volumes/hooks) — из манифеста, который парсит `devbox-manifest.mjs` node'ом внутри
   образа (единый источник, ноль дублирования). `down`/`recreate` данные (volumes) сохраняют.
-- **Autostart** (`devcontainer.json`): `postStartCommand: devbox-services up` (VS Code-путь);
-  raw-run путь — стартовая команда контейнера + `--restart unless-stopped` (см. brief A4, devbox/README).
+- **`scripts/devbox-publish.mjs`** (MANAGED, zero-deps) — publish-volume (Шаг 5 §A,
+  `briefs/feedback-hub-core-as-hub-under-isolation.md`): на старте кладёт `omnifield.yaml`
+  продукта в общий named-volume `omnifield-registry` под `<name>.yaml` (`<name>` = basename
+  репо = network-alias). hub-core глобит оттуда `*.yaml` (ro) вместо fs-скана сиблингов —
+  реестр НЕ зависит от up-состояния (last-published-wins, маршрут не моргает). Манифеста нет →
+  loud-warn + no-op (продукт без манифеста просто вне двери `:8080`, декларация = зона его owner'а).
+  Волюм монтируется в `.devcontainer/devcontainer.json` (`omnifield-registry` rw, target
+  `/omnifield-registry`, chown в `postCreate`); публикация — из `postStartCommand` РЯДОМ с
+  `devbox-services up` (разные концерны, чейн через `;` — dev-сервисы поднимутся независимо).
+- **Autostart** (`devcontainer.json`): `postStartCommand: devbox-publish; devbox-services up`
+  (VS Code-путь); raw-run путь — стартовая команда контейнера + `--restart unless-stopped`
+  (см. brief A4, devbox/README).
 - **Онбординг-seed** (`postCreateCommand`): idempotent-засев `.claude.json`
   (`hasCompletedOnboarding`) — свежий volume не гонит экран регистрации (brief B8).
 
