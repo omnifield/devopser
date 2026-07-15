@@ -53,10 +53,13 @@ const MANAGED = [
   { src: "npmrc", dest: ".npmrc" },
   { src: "husky-pre-commit", dest: ".husky/pre-commit" },
   { src: "husky-pre-push", dest: ".husky/pre-push" },
-  // dev-services оркестратор + session-launcher — чистый механизм (brief A2/A3/B6),
-  // drift-managed как husky: фикс обязан пропагироваться во все продукт-devbox'ы.
+  // dev-services оркестратор + session-launcher + headless-провижинер (+ его манифест-эмиттер)
+  // — чистый механизм (brief A2/A3/B6 + Шаг 2), drift-managed как husky: фикс обязан
+  // пропагироваться во все продукт-devbox'ы.
   { src: "devbox-services.mjs", dest: "scripts/devbox-services.mjs" },
   { src: "devbox-session.sh", dest: "scripts/devbox-session.sh", exec: true },
+  { src: "devbox.sh", dest: "scripts/devbox.sh", exec: true },
+  { src: "devbox-manifest.mjs", dest: "scripts/devbox-manifest.mjs" },
 ];
 
 // Init-only шаблоны. Общий — devbox-инфра всем стекам; node/go — по стеку репо.

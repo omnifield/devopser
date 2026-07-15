@@ -45,7 +45,7 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 | Файл | Режим |
 |---|---|
 | `.editorconfig` · `.gitattributes` · `.npmrc` · `.husky/pre-commit` · `.husky/pre-push` | точная копия эталона |
-| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже) |
+| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/devbox-manifest.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже) |
 | `.gitignore` | managed-блок между маркерами `>>> omnifield-skeleton` — ниже блока репо дописывает своё |
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
@@ -85,7 +85,14 @@ devcontainer `--network-alias` — single-origin).
   достучится, 502 → kill + fail-at-startup) и **G2** (литеральный ` -- ` перед `--host`/`--port`).
 - **`scripts/devbox-session.sh`** (MANAGED, exec `0755`) — вход одной командой: `devbox-session.sh
   [scope]` резолвит devbox-контейнер репо → `docker exec -it -e OMNIFIELD_SCOPE=<scope> … claude`,
-  дёргает idempotent `devbox-services up` (safety-net). Тонкая инфра, про модель/роль не знает.
+  дёргает idempotent `devbox-services up` (safety-net). Тонкая session-entry, контейнер НЕ создаёт.
+- **`scripts/devbox.sh`** (MANAGED, exec `0755`) + **`scripts/devbox-manifest.mjs`** (MANAGED, zero-deps)
+  — headless-провижинер (Шаг 2): `devbox.sh up|down|recreate` поднимает/пересоздаёт devbox репо из
+  его `.devcontainer/devcontainer.json` по канону ОДНОЙ командой (containers-only, ноль ручных
+  `docker run`). Канон-инвариант (сеть gateway alias=имя, единственный bind своего репо,
+  `--restart unless-stopped`, ноль host-портов) ставит сам провизионер; продукт-переменное
+  (image/env/volumes/hooks) — из манифеста, который парсит `devbox-manifest.mjs` node'ом внутри
+  образа (единый источник, ноль дублирования). `down`/`recreate` данные (volumes) сохраняют.
 - **Autostart** (`devcontainer.json`): `postStartCommand: devbox-services up` (VS Code-путь);
   raw-run путь — стартовая команда контейнера + `--restart unless-stopped` (см. brief A4, devbox/README).
 - **Онбординг-seed** (`postCreateCommand`): idempotent-засев `.claude.json`
