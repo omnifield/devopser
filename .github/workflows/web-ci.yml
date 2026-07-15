@@ -1,0 +1,80 @@
+# Reusable CI для standalone-фронта экосистемы (Foundation Шаг 1, briefs/web-ci-frontend-stack.md).
+# Зеркалит node-ci canon-shape, но для самостоятельного pnpm-воркспейса (vite и т.п., БЕЗ nx-монорепо).
+# Потребитель держит ~5-строчный caller:
+#   uses: omnifield/devopser/.github/workflows/web-ci.yml@main
+#   with: { working-directory: web }   # если фронт живёт в сабдире; дефолт — корень репо
+#
+# Версии тулчейна — ТОЛЬКО из пинов ВОРКСПЕЙСА-вызывателя (канон toolchain-pins):
+#   pnpm — packageManager в <wd>/package.json (pnpm/action-setup без version);
+#   node — engines.node в <wd>/package.json (node-version-file). Ноль хардкода pnpm/node.
+#
+# permissions задаёт CALLER, минимум contents: read (checkout + полная история gitleaks).
+#   web-флоу не тянет nx-set-shas / @omnifield-пакеты → actions/packages НЕ нужны (как go-ci).
+name: Web CI (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Каталог фронт-воркспейса (package.json/pnpm-lock тут); дефолт — корень репо'
+        type: string
+        required: false
+        default: '.'
+      drift-check:
+        description: 'Сверка вендоренных skeleton-копий с эталоном devopser (D3); выключать только на переходный период'
+        type: boolean
+        required: false
+        default: true
+      secret-scan:
+        description: 'gitleaks по всей git-истории (репо публичные — токены ловит CI); выключать только с решением architect'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  web:
+    name: Web (lint · typecheck · test · build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # gitleaks сканит всю историю → полная глубина.
+          fetch-depth: 0
+      # Секрет-скан — по всему репо от корня (не из воркспейса): токены могут быть где угодно.
+      - name: secret-scan (gitleaks)
+        if: ${{ inputs.secret-scan }}
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --no-banner
+      # pnpm — из packageManager воркспейса (package_json_file указывает на <wd>, не корень).
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ${{ inputs.working-directory }}/package.json
+      # node — из engines.node того же воркспейса; кэш pnpm по его lock-файлу.
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ${{ inputs.working-directory }}/package.json
+          cache: pnpm
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+      # Шаги — pnpm-скрипты воркспейса (lint/typecheck/test/build определяет продукт),
+      # все под working-directory вызывателя. Ноль nx, ноль имён продукта.
+      - name: install
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile
+      - name: lint
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run lint
+      - name: typecheck
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run typecheck
+      - name: test
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run test
+      - name: build
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run build
+      # D3: дрейф общего managed-набора виден сразу (composite сверяет от корня репо).
+      - name: skeleton drift-check
+        if: ${{ inputs.drift-check }}
+        uses: omnifield/devopser/.github/actions/drift-check@main

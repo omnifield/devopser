@@ -1,3 +1,7 @@
 {
-  "chater": { "require-pr": true, "stack": ["go", "frontend"] }
+  "chater": {
+    "require-pr": true,
+    "stack": ["go", "frontend"],
+    "frontend": { "working-directory": "web" }
+  }
 }
