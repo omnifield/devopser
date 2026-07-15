@@ -11,6 +11,9 @@ export const ZONES = {
   skeleton: { relativePath: 'packages', name: 'skeleton — repo-skeleton product: presets (packages/) + reusable CI (.github/workflows/) + init/drift' },
   registry: { relativePath: 'registry', name: 'registry — ports / products / routes source of truth' },
   workstation: { relativePath: 'workstation', name: 'workstation — dev-machine provisioning (bootstrap base toolchain + repo map)' },
+  // hub-core — ядро хаба (реестр+дверь), потребитель = сам omnifield-hub (needs-driven: хаб заказал
+  // gateway-стек). Пишет hub-core/ + stacks/gateway/ (briefs/hub-core-design.md + feedback-hub-core-as-hub-under-isolation.md).
+  'hub-core': { relativePath: 'hub-core', name: 'hub-core — ядро хаба воркспейса: реестр (скан манифестов) + дверь (генерит stacks/gateway/ nginx+лендинг)' },
 };
 
 export function resolveScope(scope) {
