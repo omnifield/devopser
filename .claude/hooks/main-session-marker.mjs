@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // main-session-marker.mjs — SessionStart hook: пишет session_id в marker ТОЛЬКО для scope 'main'.
 //
-// user запускает каждую сессию через `claude-scope.ps1 -Scope <name>` (ставит OMNIFIELD_SCOPE).
+// user запускает каждую сессию через `scripts/devbox-session.sh <scope>` (ставит OMNIFIELD_SCOPE).
 // Destructive git ops по канону — только scope 'main' (architect). Любой другой scope
 // (owner-*) НЕ должен трогать marker, иначе перезапишет main marker своим id и main
 // потеряет git-доступ. Поэтому marker пишется ТОЛЬКО если OMNIFIELD_SCOPE === 'main'.

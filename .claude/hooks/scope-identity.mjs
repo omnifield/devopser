@@ -62,7 +62,7 @@ function anomalyBanner(scope) {
   return [
     `# Session identity — OMNIFIELD_SCOPE=${scope} (UNRESOLVED)`,
     ``,
-    `**Аномалия**: scope "${scope}" не резолвится в зону. claude-scope должен был блокировать запуск.`,
+    `**Аномалия**: scope "${scope}" не резолвится в зону (см. scope-resolve.mjs ZONES).`,
     `Доступные: ${list}.`,
     ``,
     `**Action**: STOP. Сообщи user — scope невалидный. Не начинай работу (нет boundary/ownership).`,

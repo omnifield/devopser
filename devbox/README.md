@@ -20,10 +20,14 @@ bind-mount рабочей папки** (файлы на
    переживают), `recreate` = `down`+`up`. На хосте нужен только `docker`; манифест парсит
    node внутри образа (`scripts/devbox-manifest.mjs`). См. `briefs/devbox-provision-lifecycle.md`.
    ```sh
-   scripts/devbox.sh up        # создать+запустить (идемпотентно)
-   scripts/devbox.sh recreate  # пересоздать, данные сохранить
-   scripts/devbox.sh down      # удалить контейнер (volumes целы)
+   scripts/devbox.sh up               # создать+запустить (идемпотентно)
+   scripts/devbox.sh recreate         # пересоздать, данные сохранить
+   scripts/devbox.sh down             # удалить контейнер (volumes целы)
+   # затем — вход роль-сессией (Шаг 3, ретайр claude-scope.ps1):
+   scripts/devbox-session.sh <scope>  # OMNIFIELD_SCOPE + model-pin (owner→opus) + workdir
    ```
+   Канон-путь запуска сессии = `devbox.sh up` (провижн) → `devbox-session.sh <scope>` (вход).
+   Имя контейнера — конвенция-контракт `${repo}-devbox` (ставит `devbox.sh up`), не хардкод.
 1. **Чистая машина (git на хост НЕ ставится)** — клон изнутри контейнера в
    примонтированную папку, затем вход любым способом ниже:
    ```sh
@@ -88,7 +92,8 @@ bind-mount рабочей папки** (файлы на
 ## Роль-сессии и секрет-volume
 
 - **Вход в роль — env `OMNIFIELD_SCOPE`**, не `.ps1`. pwsh в образ не тащим (Д9):
-  `claude-scope.ps1` остаётся хост-историей. Scope задаётся при запуске сессии —
+  `claude-scope.ps1` ретайрен (Шаг 3) — вход канон-командой `scripts/devbox-session.sh <scope>`
+  (ставит `OMNIFIELD_SCOPE` + model-pin). Scope задаётся при запуске сессии —
   `OMNIFIELD_SCOPE=<scope>` (`containerEnv` / `docker exec -e`); identity-механика
   (scope-identity / marker / git-gate, `.mjs`-хуки из bind-mount рабочей копии)
   заводится от него, node образа их исполняет.
