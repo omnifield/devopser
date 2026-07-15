@@ -12,14 +12,19 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 записи (или запуске из published-пакета, где `platform/` нет) — **фолбэк-детект по фактам**
 (`go.mod`→go, `package.json`→node). Источник правды — конфиг.
 
+`node` и `frontend` РАЗВЕДЕНЫ: `node` = nx-монорепо (корневые pnpm+nx), `frontend` =
+standalone-фронт (свой pnpm-воркспейс, vite, БЕЗ nx — свои конфиги в воркспейсе).
+
 | Стек | Что раскатывается сверх общего набора |
 |---|---|
-| `node` / `frontend` | `nx.json` · `biome.json` · `.github/dependabot.yml` · `package.json` (+пины) · CI-caller `node` job (`node-ci.yml`) |
+| `node` (nx-монорепо) | `nx.json` · `biome.json` · `.github/dependabot.yml` · `package.json` (+пины) · CI-caller `node` job (`node-ci.yml`) |
+| `frontend` (standalone) | CI-caller `web` job (`web-ci.yml`) + `working-directory` из `repo-flow.json`; корневой nx-набор НЕ навязывается (у фронта свои конфиги) |
 | `go` | `.golangci.yml` · `sqlc.yaml` (init-only, продукт правит) · CI-caller `go` job (`go-ci.yml`) |
 | любой | `.editorconfig`/`.gitattributes`/`.npmrc`/`.husky/*`/`devbox-*`/`.gitignore`-блок/`.devcontainer`/`devbox.services.json` · `pr-title.yml` |
 
-Мульти-стек (напр. `["go","frontend"]`) — объединение: `ci.yml` получает оба job'а,
-`permissions` — объединение канонов reusable (go: `contents:read`; node: +`actions`+`packages`).
+Мульти-стек (напр. `["go","frontend"]`) — объединение: `ci.yml` получает все job'ы,
+`permissions` — объединение канонов reusable (go/frontend: `contents:read`; node: +`actions`+`packages`).
+Frontend-конфиг в `repo-flow.json`: `"<repo>": { "stack": ["frontend"], "frontend": { "working-directory": "web" } }`.
 
 ## Команды
 

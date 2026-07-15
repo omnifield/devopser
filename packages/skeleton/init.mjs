@@ -13,13 +13,17 @@
 // источник правды platform/repo-flow.json (поле `stack`), фолбэк — детект по фактам
 // репо (go.mod→go, package.json→node). Ветвление — ПО СТЕКУ, НЕ по имени репо
 // (north-star брифа): go-путь работает для любого go-репо, node — для любого node.
+//   node     = nx-монорепо (pnpm+nx в корне) → node-ci + корневой nx/package/biome-набор.
+//   frontend = standalone-фронт (свой pnpm-воркспейс, vite, БЕЗ nx) → web-ci-caller,
+//              БЕЗ навязывания корневого nx-набора (у фронта свои конфиги в воркспейсе).
+//              working-directory фронта — из repo-flow.json (frontend.working-directory).
 //
 // Managed-набор (сверяется drift-check'ом; синк — только явной командой, не молча):
 //   общий (все стеки): .editorconfig / .gitattributes / .npmrc / .husky/* / devbox-* /
-//                      .gitignore managed-блок;  node/frontend: package.json пины.
+//                      .gitignore managed-блок;  node: package.json пины.
 // Init-only (создаются, если отсутствуют; НЕ drift-managed — репо легитимно правит):
 //   общий: .devcontainer / devbox.services.json / CI-caller'ы (ci.yml + pr-title.yml);
-//   node/frontend: nx.json / biome.json / dependabot;  go: .golangci.yml / sqlc.yaml.
+//   node: nx.json / biome.json / dependabot;  go: .golangci.yml / sqlc.yaml.
 // nx.json / biome.json — репо расширяет пресеты (пример: python-таргеты brainer);
 // go-шаблоны — продукт правит пути/движок БД (sqlite→postgres drop-in).
 
@@ -72,11 +76,13 @@ const GO_TEMPLATES = [
   { src: "go/sqlc-template.yaml", dest: "sqlc.yaml" },
 ];
 
-// CI-caller per stack: go→go-ci.yml, node/frontend→node-ci.yml. pr-title — всем.
-// permissions — по канону каждого reusable (go: contents:read; node: +actions,+packages).
+// CI-caller per stack: go→go-ci.yml, node→node-ci.yml (nx-монорепо),
+// frontend→web-ci.yml (standalone-фронт, БЕЗ nx). pr-title — всем.
+// permissions — по канону каждого reusable (go/frontend: contents:read; node: +actions,+packages).
 const CI_JOB = {
   go: { name: "go", reusable: "go-ci.yml" },
   node: { name: "node", reusable: "node-ci.yml" },
+  frontend: { name: "web", reusable: "web-ci.yml" },
 };
 const PERM_ORDER = ["contents: read", "actions: read", "packages: read"];
 
@@ -112,18 +118,22 @@ function detectStacks(target) {
   return s.length ? s : ["node"]; // пустой репо — безопасный дефолт (текущее поведение)
 }
 
-// Источник правды — repo-flow.json[<basename>].stack; иначе детект.
+// Источник правды — repo-flow.json[<basename>]; иначе детект. Возвращаем и запись флоу
+// (нужна frontend-конфигу: working-directory).
 function resolveStacks(target) {
   const name = basename(target);
   if (existsSync(REPO_FLOW)) {
-    const st = JSON.parse(readFileSync(REPO_FLOW, "utf8"))[name]?.stack;
-    if (Array.isArray(st) && st.length) return { stacks: st, source: `repo-flow.json[${name}]` };
+    const entry = JSON.parse(readFileSync(REPO_FLOW, "utf8"))[name];
+    const st = entry?.stack;
+    if (Array.isArray(st) && st.length)
+      return { stacks: st, source: `repo-flow.json[${name}]`, entry };
   }
-  return { stacks: detectStacks(target), source: "детект (facts)" };
+  return { stacks: detectStacks(target), source: "детект (facts)", entry: null };
 }
 
 // Сборка ci.yml-caller по стеку: один job на reusable, permissions — объединение канонов.
-function buildCiYml({ hasGo, hasNode }) {
+// frontend-job передаёт working-directory (сабдир-фронт), если он не корень.
+function buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }) {
   const jobs = [];
   const perms = new Set(["contents: read"]);
   if (hasGo) jobs.push(CI_JOB.go);
@@ -132,10 +142,16 @@ function buildCiYml({ hasGo, hasNode }) {
     perms.add("actions: read");
     perms.add("packages: read");
   }
+  if (hasFrontend) jobs.push({ ...CI_JOB.frontend, workdir: frontendWorkdir });
   const permStr = PERM_ORDER.filter((p) => perms.has(p)).join(", ");
   const head = readEtalon("ci-caller/head.yml").replace("__PERMISSIONS__", permStr);
   const body = jobs
-    .map((j) => `  ${j.name}:\n    uses: omnifield/devopser/.github/workflows/${j.reusable}@main\n`)
+    .map((j) => {
+      let s = `  ${j.name}:\n    uses: omnifield/devopser/.github/workflows/${j.reusable}@main\n`;
+      if (j.workdir && j.workdir !== ".")
+        s += `    with:\n      working-directory: ${j.workdir}\n`;
+      return s;
+    })
     .join("");
   return head + body;
 }
@@ -172,9 +188,13 @@ function main() {
   const args = process.argv.slice(2);
   const check = args.includes("--check");
   const target = resolve(args.filter((a) => !a.startsWith("--"))[0] ?? ".");
-  const { stacks, source } = resolveStacks(target);
-  const hasNode = stacks.some((s) => s === "node" || s === "frontend");
+  const { stacks, source, entry } = resolveStacks(target);
+  // node = nx-монорепо (корневой nx/package/biome + node-ci); frontend = standalone-фронт
+  // (свой воркспейс + web-ci, БЕЗ навязывания корневого nx-набора) — стеки РАЗВЕДЕНЫ.
+  const hasNode = stacks.includes("node");
   const hasGo = stacks.includes("go");
+  const hasFrontend = stacks.includes("frontend");
+  const frontendWorkdir = entry?.frontend?.["working-directory"] ?? ".";
   console.log(`[skeleton] стек: [${stacks.join(", ")}] (${source})`);
   const drift = [];
   const actions = [];
@@ -219,7 +239,8 @@ function main() {
     }
   }
 
-  // 3. package.json пины — только node/frontend-стек (go-репо package.json не несёт).
+  // 3. package.json пины — только node-стек (nx-монорепо в корне). go-репо и standalone-фронт
+  //    корневой package.json не несут (у фронта он в своём воркспейсе).
   if (hasNode) {
     const pkgPath = join(target, "package.json");
     const pkgRaw = readTarget(pkgPath);
@@ -268,7 +289,7 @@ function main() {
     // 5. CI-caller'ы per stack (init-only): ci.yml по стеку + pr-title всем.
     const ciPath = join(target, ".github/workflows/ci.yml");
     if (!existsSync(ciPath)) {
-      writeLf(ciPath, buildCiYml({ hasGo, hasNode }));
+      writeLf(ciPath, buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }));
       actions.push(".github/workflows/ci.yml: создан (caller per stack)");
     }
     const prPath = join(target, ".github/workflows/pr-title.yml");
