@@ -9,7 +9,8 @@
 #   node — engines.node в <wd>/package.json (node-version-file). Ноль хардкода pnpm/node.
 #
 # permissions задаёт CALLER, минимум contents: read (checkout + полная история gitleaks).
-#   web-флоу не тянет nx-set-shas / @omnifield-пакеты → actions/packages НЕ нужны (как go-ci).
+#   web МОЖЕТ тянуть @omnifield-пресеты (GitHub Packages) → caller даёт packages: read.
+#   nx-set-shas по-прежнему нет → actions НЕ нужен (в отличие от node-ci).
 name: Web CI (reusable)
 
 on:
@@ -57,11 +58,18 @@ jobs:
           node-version-file: ${{ inputs.working-directory }}/package.json
           cache: pnpm
           cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+          # user-level .npmrc с токеном под @omnifield-пакеты (GitHub Packages).
+          registry-url: https://npm.pkg.github.com
+          scope: '@omnifield'
       # Шаги — pnpm-скрипты воркспейса (lint/typecheck/test/build определяет продукт),
       # все под working-directory вызывателя. Ноль nx, ноль имён продукта.
       - name: install
         working-directory: ${{ inputs.working-directory }}
         run: pnpm install --frozen-lockfile
+        env:
+          # Чтение @omnifield-пресетов; пакету devopser нужен grant на репо-вызыватель
+          # (Package settings → Manage Actions access) — как для node-ci.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: lint
         working-directory: ${{ inputs.working-directory }}
         run: pnpm run lint
