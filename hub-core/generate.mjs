@@ -118,9 +118,20 @@ function genLocation(m, r) {
     `        proxy_buffering off;\n` +
     `        proxy_read_timeout 1h;\n`;
   const native = isApi ? ` → ${m.name}:${r.port}${r.path.replace(/^\/api/, "") || "/"} (rewrite -/api)` : ` → ${m.name}:${r.port}`;
+  if (isApi) {
+    return (
+      `    # ${m.name} (${m.type})${native}\n` +
+      `    location ${r.path} {\n` +
+      common +
+      `    }`
+    );
+  }
+  // Фронт: bare /<name> → 301 /<name>/ (SPA под base /<name>/ из пресета — иначе /<name>=404);
+  // сервинг под /<name>/. api-маршрут (rewrite) выше не трогаем.
   return (
     `    # ${m.name} (${m.type})${native}\n` +
-    `    location ${r.path} {\n` +
+    `    location = ${r.path} { return 301 ${r.path}/; }\n` +
+    `    location ${r.path}/ {\n` +
     common +
     `    }`
   );
