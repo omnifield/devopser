@@ -1,0 +1,46 @@
+{
+  "name": "@omnifield/vite-preset",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Omnifield frontend-пресет: single-origin base из манифеста продукта (единый источник) + server-канон (host/allowedHosts) + плагин-слот под будущий фреймворк (briefs/vite-preset-single-origin-base.md). Builder-agnostic ядро (manifest.js) — миграция на свой фреймворк = конфиг, не rewrite.",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./manifest": {
+      "types": "./manifest.d.ts",
+      "import": "./manifest.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "manifest.js",
+    "manifest.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "yaml": "^2.6.1"
+  },
+  "peerDependencies": {
+    "vite": ">=5"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omnifield/devopser.git",
+    "directory": "packages/vite-preset"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
