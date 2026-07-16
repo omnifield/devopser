@@ -84,6 +84,36 @@ jobs:
 Мульти-стек репо (напр. go-бэк + standalone-фронт) держит оба job'а в одном `ci.yml`
 (`init.mjs` собирает их по стеку + объединяет `permissions`).
 
+## Гейты (rulesets — settings-as-code, `platform/`)
+
+Гейты веток раскатывает `platform/apply-rulesets.mjs` (идемпотентно, PUT/POST по имени
+ruleset'а). Конфиг гейтов — **не хардкод в репо**, а `platform/repo-flow.json`
+(per-repo флаги + стек) + шаблоны `platform/rulesets/`.
+
+| Ruleset | На кого | Что держит |
+|---|---|---|
+| `main-integrity` | **все** репо org | запрет удаления/force-push default-ветки |
+| `flow-require-pr` | флаг `require-pr` в `repo-flow.json` | мерж в main только через PR (0 обяз. ревью) |
+| `flow-required-checks` | `require-pr` **и** непустой `stack` | **red CI блокирует мерж** — required-статус-чеки |
+
+**required-checks = гейт конфигом, единый источник = стек.** Контексты (имена required-чеков)
+НЕ прописаны per-repo — **выводятся из `repo-flow.json.stack`**: стек `go`/`node`/`frontend`
+→ чек `<caller-job> / <job-name reusable>`, где `caller-job` = `go`/`node`/`web`, а `job-name`
+читается из самого reusable-воркфлоу (`*-ci.yml`) — переименование джобы синкает гейт
+автоматически, рассинхрона «required ждёт несуществующий чек» не случается.
+
+- **required = только субстантивное** (сборка/тест/линт/drift per stack). `pr-title`
+  (`semantic`) и прочие «мягкие»/флейки в required **НЕ попадают** by construction —
+  красный семантик-чек мерж не блокирует.
+- `strict` (branch up-to-date перед мержем) — **выключен** осознанно: не форсим ребейз
+  всего флота на каждый апдейт main.
+- Новый репо получает гейт **одной командой**: запись в `repo-flow.json` (`require-pr` +
+  `stack`) → `node platform/apply-rulesets.mjs` (или `... <repo>`).
+- Снятие флага НЕ удаляет ruleset на GitHub — снести руками/API (осознанная операция).
+
+`devopser` — юзер №0 собственного гейта (`repo-flow.json` → `stack:[node]`): этот репо
+мержит свои PR только через зелёный `node`-чек (догфуд).
+
 ## Контракт с пинами вызывателя (канон toolchain-pins)
 
 Workflow версий НЕ содержит — читает пины репо-потребителя:
