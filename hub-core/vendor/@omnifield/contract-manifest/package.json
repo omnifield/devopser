@@ -1,0 +1,30 @@
+{
+  "name": "@omnifield/contract-manifest",
+  "version": "0.1.0",
+  "description": "VENDORED prebuilt dist контракта product-manifest (omnifield.dev/v1). Источник правды — knowledger/contracts/manifest; здесь бандл dist/ для развязки file:../../knowledger под изоляцией хаба (briefs/hubcore-door-from-registry.md §4). Обновлять копией dist из knowledger, не править руками.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./omnifield.schema.json": "./omnifield.schema.json"
+  },
+  "files": [
+    "dist",
+    "omnifield.schema.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

@@ -1,29 +1,69 @@
-# dev-gateway — single-origin вход dev-машины + хаб
-# (gateway-hub-single-origin.md + gateway-network-single-origin.md).
+# dev-gateway — single-origin вход dev-машины + хаб (реестр→дверь из registry).
+# briefs/hubcore-door-from-registry.md, briefs/feedback-hub-core-as-hub-under-isolation.md.
 #
-# Пререквизит — внешняя сеть (один раз на машину; devbox'ы создают её сами через
-# initializeCommand, для standalone-compose создай явно):
+# Модель (Шаг 5.3): дверь НЕ рукописная и НЕ host-bind'ится — она генерится hub-core из
+# publish-volume `omnifield-registry` (манифесты продуктов) в door-volume `omnifield-gateway-conf`,
+# который монтирует nginx. Committed nginx.conf/hub ретайрены — источник правды = генерация в volume.
+#
+# Пререквизиты (один раз на машину; devbox'ы создают сеть/volume сами через initializeCommand,
+# для standalone-compose — явно):
 #   docker network create omnifield-gateway
-# Запуск:  docker compose up -d   (из этой директории)
-# Вход:    http://localhost:8080/ — хаб; маршруты — nginx.conf.
+#   docker volume  create omnifield-registry      # publish-volume: продукт-devbox'ы кладут <name>.yaml
+# Запуск:  docker compose up -d --build   (из этой директории)
+#   → hub-core глобит omnifield-registry/*.yaml → пишет дверь в omnifield-gateway-conf → выходит;
+#   → gateway монтирует door-volume и стартует. Вход: http://localhost:8080/ — хаб.
+# Регенерация после нового publish:  docker compose run --rm hub-core && docker compose restart gateway
 #
 # Порт 8080 — ЕДИНСТВЕННАЯ хост-публикация всей системы (registry/ports.md; контракт).
-# Апстримы продуктов (brainer:3500/8010, weber:5173) — по docker-сети
-# omnifield-gateway, alias = network-alias продукт-devbox'а (= имя репо); НЕ
-# host.docker.internal и НЕ per-service -p (gateway-network-single-origin.md).
+# Апстримы продуктов — по docker-сети omnifield-gateway, alias = имя репо (= manifest.name);
+# НЕ host.docker.internal и НЕ per-service -p (single-origin, [[single-origin-only-8080]]).
+#
+# Требует Docker Engine 26+ / Compose 2.18+ (volume subpath-mount door-volume).
 services:
+  # Генератор двери — одноразовый (регенерит nginx.conf+лендинг в door-volume и выходит).
+  hub-core:
+    build: ../../hub-core
+    image: omnifield-hub-core:local
+    container_name: omnifield-hub-core
+    restart: "no"
+    volumes:
+      - omnifield-registry:/omnifield-registry:ro       # вход: манифесты продуктов (publish-volume)
+      - omnifield-gateway-conf:/omnifield-gateway        # выход: дверь (nginx.conf + hub/index.html)
+
   gateway:
     image: nginx:1.29-alpine
     container_name: omnifield-gateway
     restart: unless-stopped
+    depends_on:
+      hub-core:
+        condition: service_completed_successfully   # дверь сгенерена до старта nginx
     ports:
       - "8080:80"
     networks:
       - omnifield-gateway
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./hub:/usr/share/nginx/html:ro
+      # door-volume, сгенерённый hub-core (замена host-bind ./nginx.conf + ./hub):
+      - type: volume
+        source: omnifield-gateway-conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        volume:
+          subpath: nginx.conf
+      - type: volume
+        source: omnifield-gateway-conf
+        target: /usr/share/nginx/html
+        read_only: true
+        volume:
+          subpath: hub
 
 networks:
   omnifield-gateway:
     external: true
+
+volumes:
+  # publish-volume: пишут продукт-devbox'ы (devbox-publish.mjs), hub-core глобит ro.
+  # external — создаётся вне этого compose (devbox initializeCommand / docker volume create).
+  omnifield-registry:
+    external: true
+  # door-volume: пишет hub-core, читает gateway. Локальный (пересобираемо из registry).
+  omnifield-gateway-conf:

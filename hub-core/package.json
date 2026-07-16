@@ -9,10 +9,12 @@
   },
   "scripts": {
     "generate": "node generate.mjs",
-    "check": "node generate.mjs --check"
+    "check": "node generate.mjs --check",
+    "test": "node --test"
   },
   "dependencies": {
-    "@omnifield/contract-manifest": "file:../../knowledger/contracts/manifest",
-    "yaml": "^2.6.1"
+    "@omnifield/contract-manifest": "file:./vendor/@omnifield/contract-manifest",
+    "yaml": "^2.6.1",
+    "zod": "^3.23.8"
   }
 }
