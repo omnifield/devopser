@@ -1,11 +1,28 @@
 {
   "chater": {
     "require-pr": true,
-    "stack": ["go", "frontend"],
-    "frontend": { "working-directory": "web" }
+    "stack": [
+      "go",
+      "frontend"
+    ],
+    "frontend": {
+      "working-directory": "web"
+    }
   },
   "devopser": {
     "require-pr": true,
-    "stack": ["node"]
+    "stack": [
+      "node"
+    ]
+  },
+  "tasker": {
+    "require-pr": true,
+    "stack": [
+      "go",
+      "frontend"
+    ],
+    "frontend": {
+      "working-directory": "web"
+    }
   }
 }
