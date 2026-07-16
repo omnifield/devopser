@@ -9,16 +9,19 @@ importers:
   .:
     dependencies:
       '@omnifield/contract-manifest':
-        specifier: file:../../knowledger/contracts/manifest
-        version: file:../../knowledger/contracts/manifest
+        specifier: file:./vendor/@omnifield/contract-manifest
+        version: file:vendor/@omnifield/contract-manifest
       yaml:
         specifier: ^2.6.1
         version: 2.9.0
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
 packages:
 
-  '@omnifield/contract-manifest@file:../../knowledger/contracts/manifest':
-    resolution: {directory: ../../knowledger/contracts/manifest, type: directory}
+  '@omnifield/contract-manifest@file:vendor/@omnifield/contract-manifest':
+    resolution: {directory: vendor/@omnifield/contract-manifest, type: directory}
     engines: {node: '>=22.18'}
 
   yaml@2.9.0:
@@ -31,7 +34,7 @@ packages:
 
 snapshots:
 
-  '@omnifield/contract-manifest@file:../../knowledger/contracts/manifest':
+  '@omnifield/contract-manifest@file:vendor/@omnifield/contract-manifest':
     dependencies:
       zod: 3.25.76
 

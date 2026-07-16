@@ -1,0 +1,5 @@
+# hub-core-специфика. Корневой .gitignore глушит `dist/` (build-артефакты) —
+# но vendor/@omnifield/contract-manifest/dist ВЕНДОРЕН (bundle контракта, развязка
+# file:../../knowledger, briefs/hubcore-door-from-registry.md §4): это источник, не артефакт,
+# и обязан быть в репо, иначе чистый чекаут не соберёт образ hub-core. Re-include:
+!vendor/@omnifield/contract-manifest/dist/

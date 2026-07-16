@@ -6,23 +6,25 @@
 внутренняя деталь (nginx targets); source of truth — `registry/ports.md`, из UX
 и доков они уходят.
 
-- **Пререквизит — внешняя сеть** (`gateway-network-single-origin.md`): `docker network
-  create omnifield-gateway` (один раз; devbox'ы создают её сами через `initializeCommand`).
-  Апстримы ходят ПО ЭТОЙ СЕТИ по alias'у продукт-devbox'а (= имя репо), НЕ через
+- **Дверь генерится, не пишется руками** (Шаг 5.3, `briefs/hubcore-door-from-registry.md`):
+  `hub-core` глобит `omnifield-registry/*.yaml` (publish-volume продуктов) → пишет `nginx.conf`
+  + лендинг в door-volume `omnifield-gateway-conf`, который монтирует nginx. Committed
+  `nginx.conf`/`hub/` **ретайрены** — источник правды = генерация в volume. Правила маршрутов
+  (фронт pass-through vs `/api/<name>` rewrite) — `hub-core/README.md`.
+- **Пререквизиты — сеть + publish-volume** (один раз на машину; devbox'ы создают через
+  `initializeCommand`, для standalone — явно):
+  `docker network create omnifield-gateway` и `docker volume create omnifield-registry`.
+  Апстримы ходят ПО СЕТИ по alias'у продукт-devbox'а (= имя репо), НЕ через
   `host.docker.internal` и НЕ через per-service `-p`. **Наружу — только `:8080`.**
-- **Up**: `docker compose up -d` → http://localhost:8080/ — хаб.
-- **Маршруты** (`nginx.conf`): `/brainer/` → `brainer:3500` (фронт, HMR websocket);
-  `/sandbox/` → `weber:5173`; `/api/brainer/` → `brainer:8010` (rewrite `/api/brainer/`
-  → `/brainer/`, SSE без буферизации). Апстрим-имена резолвятся docker-DNS в runtime
-  (`resolver 127.0.0.11` + переменная в `proxy_pass`) → gateway **стартует, даже когда
-  продукт-devbox ещё не поднят**, и отвечает 502 до его подъёма (ожидаемо, gateway первым).
-- **Хаб** (`hub/index.html`) — MVP-статика руками: продукты за origin,
-  инфра (Grafana/Prometheus/Portainer) пока прямыми портами. Registry-driven
-  генерация и observability за тем же origin (`/grafana/`, `/prometheus/` —
-  нужны `GF_SERVER_ROOT_URL` / `--web.external-url` у стека-владельца) — фаза 2.
-- **Новый маршрут продукта** = контракт: через architect + запись в
-  `registry/ports.md`, затем location здесь. Продукт в стек не хардкодим больше,
-  чем парой location-строк — расширение registry-записью (stack-as-capability).
+- **Up**: `docker compose up -d --build` → hub-core генерит дверь из registry → gateway
+  стартует → http://localhost:8080/ — хаб. Регенерация после нового publish:
+  `docker compose run --rm hub-core && docker compose restart gateway`.
+- **Маршруты** резолвятся docker-DNS в runtime (`resolver 127.0.0.11` + переменная в
+  `proxy_pass`) → gateway **стартует, даже когда продукт-devbox ещё не поднят** (и когда
+  реестр пуст — дверь валидна-пустая), отвечает 502 до подъёма продукта (ожидаемо, gateway первым).
+- **Новый маршрут продукта** = запись в его `omnifield.yaml` (product-owned) + publish в volume;
+  дверь подхватит регенерацией. Порты/маршруты = контракт `registry/ports.md` (architect-gated),
+  манифесты обязаны conform'ить. Продукт в стек не хардкодим (stack-as-capability).
 - **Границы**: обычный compose на машине — docker-socket не монтируется, в devbox
   не входит; секретов нет. Капсульный gateway оракула (`capsule/docker/gateway`,
   тоже :8080) — предыдущая эпоха: одновременно не поднимать.
