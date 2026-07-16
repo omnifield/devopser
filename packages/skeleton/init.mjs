@@ -148,7 +148,10 @@ function buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }) {
     perms.add("actions: read");
     perms.add("packages: read");
   }
-  if (hasFrontend) jobs.push({ ...CI_JOB.frontend, workdir: frontendWorkdir });
+  if (hasFrontend) {
+    jobs.push({ ...CI_JOB.frontend, workdir: frontendWorkdir });
+    perms.add("packages: read"); // фронт может тянуть @omnifield-пресет (web-ci auth)
+  }
   const permStr = PERM_ORDER.filter((p) => perms.has(p)).join(", ");
   const head = readEtalon("ci-caller/head.yml").replace("__PERMISSIONS__", permStr);
   const body = jobs
