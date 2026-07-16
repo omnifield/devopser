@@ -53,6 +53,7 @@
 | 8010 | `brainer:8010` | brainer backend (uvicorn, префикс `/brainer/`; за gateway `/api/brainer/`) | `omnifield/brainer` |
 | 5173 | `weber:5173` | weber sandbox (vite dev; за gateway `/sandbox/` — полигон фреймворка, поднимается из weber-devbox) | `omnifield/weber` |
 | 8020 | `chater:8020` | chater backend (Go, префикс `/chater/`; за gateway `/api/chater/` — маршрут появится с runtime, `chater-go-prereqs.md`) | `omnifield/chater` |
+| 8030 | `tasker:8030` | tasker backend (Go, префикс `/tasker/`; за gateway `/api/tasker/`) | `omnifield/tasker` |
 
 ⚠️ Фактические временные порты brainer — 5173/8000: приводятся к контрактным 3500/8010 внутри
 devbox owner'ами (`brainer/briefs/gateway-parity-{frontend,backend}.md`). Это порт КОНТЕЙНЕРА,
