@@ -44,53 +44,24 @@ function printVersion() {
   console.log(`${name} ${version}`);
 }
 
-// exec: true → материализуется с mode 0755 (B7, brief devbox-first-run-dx: launcher теряет
-// exec-бит при правке через \\wsl.localhost → init ставит бит, husky-pre-commit его сторожит).
-// Общий набор — для ВСЕХ стеков (brief §1: editorconfig/gitattributes/husky/devbox-*).
-const MANAGED = [
-  { src: "editorconfig", dest: ".editorconfig" },
-  { src: "gitattributes", dest: ".gitattributes" },
-  { src: "npmrc", dest: ".npmrc" },
-  { src: "husky-pre-commit", dest: ".husky/pre-commit" },
-  { src: "husky-pre-push", dest: ".husky/pre-push" },
-  // dev-services оркестратор + session-launcher + headless-провижинер (+ его манифест-эмиттер)
-  // — чистый механизм (brief A2/A3/B6 + Шаг 2), drift-managed как husky: фикс обязан
-  // пропагироваться во все продукт-devbox'ы.
-  { src: "devbox-services.mjs", dest: "scripts/devbox-services.mjs" },
-  { src: "devbox-session.sh", dest: "scripts/devbox-session.sh", exec: true },
-  { src: "devbox.sh", dest: "scripts/devbox.sh", exec: true },
-  { src: "devbox-manifest.mjs", dest: "scripts/devbox-manifest.mjs" },
-  // publish-volume (Шаг 5 §A): чистый механизм публикации манифеста в registry-volume —
-  // drift-managed, фикс обязан пропагироваться во все продукт-devbox'ы (как devbox-services).
-  { src: "devbox-publish.mjs", dest: "scripts/devbox-publish.mjs" },
-];
-
-// Init-only шаблоны. Общий — devbox-инфра всем стекам; node/go — по стеку репо.
-const COMMON_TEMPLATES = [
-  { src: "devcontainer-template.json", dest: ".devcontainer/devcontainer.json" },
-  // Декларация dev-сервисов (brief A1): набор сервисов = зона продукт-owner'а;
-  // скелет ставит пустой пример ([]), содержимое пишет продукт.
-  { src: "devbox.services.json", dest: "devbox.services.json" },
-];
-const NODE_TEMPLATES = [
-  { src: "nx-template.json", dest: "nx.json" },
-  { src: "biome-template.json", dest: "biome.json" },
-  { src: "dependabot-template.yml", dest: ".github/dependabot.yml" },
-];
-const GO_TEMPLATES = [
-  { src: "go/golangci-template.yml", dest: ".golangci.yml" },
-  { src: "go/sqlc-template.yaml", dest: "sqlc.yaml" },
-];
-
-// CI-caller per stack: go→go-ci.yml, node→node-ci.yml (nx-монорепо),
-// frontend→web-ci.yml (standalone-фронт, БЕЗ nx). pr-title — всем.
-// permissions — по канону каждого reusable (go/frontend: contents:read; node: +actions,+packages).
-const CI_JOB = {
-  go: { name: "go", reusable: "go-ci.yml" },
-  node: { name: "node", reusable: "node-ci.yml" },
-  frontend: { name: "web", reusable: "web-ci.yml" },
-};
-const PERM_ORDER = ["contents: read", "actions: read", "packages: read"];
+// Рамка темплейта (состав managed / init-only / per-stack / CI-callers) — ДЕКЛАРАЦИЯ,
+// не хардкод: читаем из template.json (DEVOPSER-95: темплейт = жёсткая рамка). init.mjs —
+// исполнитель рамки, не её источник. Смысл/rationale каждого файла — в README.md.
+//   managed      — точная копия эталона, drift-fail (уехать нельзя); exec:true → mode 0755
+//                  (B7: launcher теряет exec-бит при правке через \\wsl.localhost → init
+//                  ставит бит, husky-pre-commit сторожит). Общий набор — для ВСЕХ стеков.
+//   templates.*  — init-only (создаётся, если отсутствует; НЕ drift-managed): common —
+//                  devbox-инфра всем стекам; node/go — по стеку репо.
+//   ci.jobs      — CI-caller per stack (go→go-ci.yml, node→node-ci.yml nx-монорепо,
+//                  frontend→web-ci.yml standalone, БЕЗ nx). ci.permOrder — канон permissions
+//                  (go/frontend: contents:read; node: +actions,+packages).
+const TEMPLATE = JSON.parse(readFileSync(join(PKG_DIR, "template.json"), "utf8"));
+const MANAGED = TEMPLATE.managed;
+const COMMON_TEMPLATES = TEMPLATE.templates.common;
+const NODE_TEMPLATES = TEMPLATE.templates.node;
+const GO_TEMPLATES = TEMPLATE.templates.go;
+const CI_JOB = TEMPLATE.ci.jobs;
+const PERM_ORDER = TEMPLATE.ci.permOrder;
 
 const BLOCK_START =
   "# >>> omnifield-skeleton (managed by devopser; синк: init.mjs, не редактировать руками) >>>";
@@ -157,8 +128,7 @@ function buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }) {
   const body = jobs
     .map((j) => {
       let s = `  ${j.name}:\n    uses: omnifield/devopser/.github/workflows/${j.reusable}@main\n`;
-      if (j.workdir && j.workdir !== ".")
-        s += `    with:\n      working-directory: ${j.workdir}\n`;
+      if (j.workdir && j.workdir !== ".") s += `    with:\n      working-directory: ${j.workdir}\n`;
       return s;
     })
     .join("");

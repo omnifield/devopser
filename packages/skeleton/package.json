@@ -5,10 +5,14 @@
   "type": "module",
   "files": [
     "files",
-    "init.mjs"
+    "init.mjs",
+    "template.json"
   ],
   "bin": {
     "omnifield-skeleton": "./init.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
