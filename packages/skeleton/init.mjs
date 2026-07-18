@@ -162,6 +162,71 @@ function pins() {
   return { packageManager: tpl.packageManager, node: tpl.engines.node };
 }
 
+// --- Пресет-контракт (DEVOPSER-98) -------------------------------------------
+// Пресет = дефолты ВНУТРИ рамки (DEVOPSER-95); template.json.presets биндит слот → пакет@ver,
+// пресет сам объявляет метаданные (блок omnifield его package.json): kind/slot/stack/mechanism.
+// Контракт ОБЩИЙ — не только repo-config (nx/biome/vite), но и будущие git-flow/release-пресеты
+// (DEVOPSER-108): composition ссылкой name@version, направление consumer→provider.
+
+// "@scope/name@^1.2.3" → { pkg, range }. Scoped-пакет: имя с ведущим @, версия — после ПОСЛЕДНЕГО @.
+function parsePresetRef(ref) {
+  const at = ref.lastIndexOf("@");
+  if (at <= 0) return { pkg: ref, range: null };
+  return { pkg: ref.slice(0, at), range: ref.slice(at + 1) };
+}
+
+// Метаданные пресета (блок omnifield его package.json). Резолв: node_modules целевого репо
+// (потребитель после install) → packages/<name> клона devopser (self-check/дев). null, если
+// не резолвится (напр. init до pnpm install) — валидация best-effort, жёсткий гейт живёт в
+// CI --check, где зависимости стоят.
+function resolvePresetMeta(pkg, target) {
+  const local = pkg.replace(/^@[^/]+\//, ""); // @omnifield/nx-preset → nx-preset
+  for (const c of [
+    join(target, "node_modules", pkg, "package.json"),
+    join(PKG_DIR, "..", local, "package.json"),
+  ]) {
+    if (existsSync(c)) return JSON.parse(readFileSync(c, "utf8")).omnifield ?? null;
+  }
+  return null;
+}
+
+const asList = (v) => (Array.isArray(v) ? v : [v]);
+// Пресет-стек в рамке репо, если stack=any или пересекается со стеком репо.
+const stackInFrame = (presetStack, stacks) => {
+  const ps = asList(presetStack);
+  return ps.includes("any") || ps.some((s) => stacks.includes(s));
+};
+
+// «Пресет в рамке»: для каждого bound-пресета — (а) slot биндинга == slot, объявленный пресетом;
+// (б) если конфиг слота ПРИСУТСТВУЕТ в репо, declared stack пресета обязан быть в рамке стека
+// репо (node-пресет на go-репо = вне рамки → loud-fail). Возвращает список ошибок.
+function validatePresets(target, stacks) {
+  const errors = [];
+  const presets = TEMPLATE.presets ?? {};
+  // slot → dest материализуемого конфига (проверка «конфиг присутствует → пресет в рамке»).
+  const slotDest = {};
+  for (const t of [...NODE_TEMPLATES, ...GO_TEMPLATES, ...COMMON_TEMPLATES])
+    if (t.slot) slotDest[t.slot] = t.dest;
+
+  for (const [slot, ref] of Object.entries(presets)) {
+    if (slot.startsWith("$")) continue; // $comment — не слот
+    const { pkg, range } = parsePresetRef(ref);
+    if (!range) errors.push(`биндинг слота '${slot}': '${ref}' без версии (нужно ${pkg}@^ver)`);
+    const meta = resolvePresetMeta(pkg, target);
+    if (!meta) continue; // не резолвится (до install) — гейт в CI, где deps стоят
+    if (meta.kind && meta.kind !== "preset")
+      errors.push(`биндинг '${slot}' → ${pkg}: kind '${meta.kind}' ≠ preset`);
+    if (meta.slot !== slot)
+      errors.push(`биндинг '${slot}' → ${pkg}, но пресет объявляет slot '${meta.slot}'`);
+    const dest = slotDest[slot];
+    if (dest && existsSync(join(target, dest)) && !stackInFrame(meta.stack, stacks))
+      errors.push(
+        `${dest} тянет ${pkg} (stack ${JSON.stringify(meta.stack)}) — вне рамки репо [${stacks.join(", ")}]`,
+      );
+  }
+  return errors;
+}
+
 function main() {
   printVersion();
   const args = process.argv.slice(2);
@@ -276,6 +341,18 @@ function main() {
       writeLf(prPath, readEtalon("ci-caller/pr-title.yml"));
       actions.push(".github/workflows/pr-title.yml: создан (caller)");
     }
+  }
+
+  // 6. Пресет-контракт (DEVOPSER-98): каждый bound-пресет живёт ВНУТРИ рамки. Hard-гейт в
+  //    ОБОИХ режимах (init после материализации / --check по факту репо) — loud-fail, не дрейф.
+  const presetErrors = validatePresets(target, stacks);
+  if (presetErrors.length) {
+    console.error(`[skeleton preset-check] пресет ВНЕ рамки (${presetErrors.length}):`);
+    for (const e of presetErrors) console.error(`  - ${e}`);
+    console.error(
+      "Пресет не выходит за рамку (DEVOPSER-95): стек пресета обязан совпадать со стеком репо.",
+    );
+    process.exit(1);
   }
 
   if (check) {
