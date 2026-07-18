@@ -202,3 +202,92 @@ test("пресет В рамке → ok (node-пресет на node-репо; p
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- Apply-режимы (DEVOPSER-99): mode объявлен + диспатчится -------------------
+
+const MODES = new Set(["exact", "seed", "block", "pins"]);
+const allFrameEntries = () => [
+  ...TEMPLATE.managed,
+  ...TEMPLATE.block,
+  ...TEMPLATE.pins,
+  ...TEMPLATE.templates.common,
+  ...TEMPLATE.templates.node,
+  ...TEMPLATE.templates.go,
+];
+
+test("каждая frame-запись объявляет валидный mode (exact|seed|block|pins)", () => {
+  for (const e of allFrameEntries()) {
+    assert.ok(MODES.has(e.mode), `запись ${e.dest}: mode '${e.mode}' вне {exact,seed,block,pins}`);
+  }
+  // Ожидаемая раскладка режимов по группам (рамка enforced vs сид).
+  assert.ok(
+    TEMPLATE.managed.every((e) => e.mode === "exact"),
+    "managed = exact",
+  );
+  for (const g of ["common", "node", "go"])
+    assert.ok(
+      TEMPLATE.templates[g].every((e) => e.mode === "seed"),
+      `templates.${g} = seed`,
+    );
+});
+
+test(".gitignore задекларирован block, package.json-пины — pins (не хардкод)", () => {
+  const gi = TEMPLATE.block.find((e) => e.dest === ".gitignore");
+  assert.ok(gi && gi.mode === "block" && gi.src === "gitignore-block", ".gitignore = block");
+  const pins = TEMPLATE.pins.find((e) => e.dest === "package.json");
+  assert.ok(pins && pins.mode === "pins" && pins.stack === "node", "package.json = pins (node)");
+});
+
+test("mode block диспатчится: .gitignore splice вставляет managed-блок, СОХРАНЯЯ строки репо", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, ".gitignore"), "# repo-свой\n/local-only\n");
+    assert.equal(run(repo).status, 0);
+    const gi = readFileSync(join(repo, ".gitignore"), "utf8");
+    assert.match(gi, /omnifield-skeleton/, "managed-блок вставлен (block-хендлер)");
+    assert.match(gi, /\/local-only/, "строки репо сохранены (splice, не overwrite)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("mode pins диспатчится: package.json merge чинит пины, СОХРАНЯЯ прочие ключи", () => {
+  const repo = mkRepo();
+  try {
+    const tpl = JSON.parse(readFileSync(join(PKG_DIR, "files/package-template.json"), "utf8"));
+    writeFileSync(
+      join(repo, "package.json"),
+      `${JSON.stringify({ name: "x", packageManager: "npm@1.0.0", scripts: { foo: "bar" } }, null, 2)}\n`,
+    );
+    assert.equal(run(repo).status, 0); // node-стек по дефолту
+    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    assert.equal(pkg.packageManager, tpl.packageManager, "packageManager подтянут к эталону");
+    assert.equal(pkg.engines.node, tpl.engines.node, "engines.node подтянут");
+    assert.equal(
+      pkg.scripts.foo,
+      "bar",
+      "прочие ключи package.json сохранены (merge, не overwrite)",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("mode block/pins дрейфят в --check (managed-часть enforced, как раньше)", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    // block: испортить managed-блок .gitignore → дрейф.
+    writeFileSync(join(repo, ".gitignore"), "no-block-here\n");
+    // pins: сломать пин packageManager → дрейф.
+    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    pkg.packageManager = "npm@1.0.0";
+    writeFileSync(join(repo, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "block+pins дрейф → exit 1");
+    assert.match(c.stderr, /\.gitignore/, "block-дрейф в отчёте");
+    assert.match(c.stderr, /package\.json пины/, "pins-дрейф в отчёте");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
