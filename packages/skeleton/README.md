@@ -13,17 +13,37 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 а не хардкодит — рамка есть контракт-данные, `init.mjs` — исполнитель. Расширить/сузить
 рамку = правка `template.json` (через architect — это контракт потребителей), не патч логики.
 
-| Ключ | Что объявляет |
-|---|---|
-| `managed[]` | `{src,dest,exec?}` — точная копия эталона, drift-managed; `exec:true` → mode `0755` |
-| `templates.common[]` · `templates.node[]` · `templates.go[]` | init-only шаблоны per stack (создаются, если отсутствуют; НЕ drift-managed) |
-| `ci.jobs.{go,node,frontend}` | CI-caller per stack (`{name,reusable}`) |
-| `ci.permOrder[]` | канон-порядок `permissions` объединённого `ci.yml` |
+| Ключ | Что объявляет | Режим (`mode`) |
+|---|---|---|
+| `managed[]` | `{src,dest,exec?}` — точная копия эталона; `exec:true` → `0755` | `exact` |
+| `block[]` | splice managed-блока в файл, который репо ТОЖЕ правит (`.gitignore`) | `block` |
+| `pins[]` | merge отдельных ключей (`package.json`: `packageManager`+`engines.node`); `stack` гейт | `pins` |
+| `templates.common[]` · `templates.node[]` · `templates.go[]` | init-only шаблоны per stack (создаются, если нет; НЕ drift) | `seed` |
+| `ci.jobs.{go,node,frontend}` · `ci.permOrder[]` | CI-caller per stack + канон-порядок `permissions` | (вычисляемый seed) |
+| `presets{}` | биндинг слот → `@omnifield/X-preset@^ver` (DEVOPSER-98) | — |
 
-Пины node (`packageManager`/`engines.node`) — из `files/package-template.json` (не дублируются
-в манифесте). Тест `test.js` (`node --test`) сторожит инвариант «манифест = источник рамки»:
-init материализует ровно объявленный манифестом состав, drift-check краснеет на уехавшем
-`managed`, но не на правке init-only.
+Тест `test.js` (`node --test`) сторожит инварианты: «манифест = источник рамки» (init
+материализует ровно объявленный состав; drift-check краснеет на уехавшем `managed`, не на
+правке init-only) и «mode диспатчится» (block splice сохраняет строки репо; pins merge —
+прочие ключи).
+
+## Режимы применения (`mode`)
+
+**КАК** файл кладётся объявлено явно в `template.json` (`mode` у каждой записи, DEVOPSER-99);
+`init.mjs` **диспатчит** по `mode` (хендлеры), а не по тому, в каком массиве запись. Четыре
+режима — это граница «рамка enforced (DEVOPSER-95) vs сид, который репо докручивает»:
+
+| `mode` | Что делает | Drift-check | Пример |
+|---|---|---|---|
+| `exact` | точная копия эталона; `exec:true` → бит `0755` | **краснеет** на любом расхождении (уехать нельзя) | `.husky/*`, `scripts/devbox-*`, `.editorconfig` |
+| `block` | splice managed-блока между маркерами в файл, который репо ТОЖЕ правит | **краснеет** только на managed-блоке (свои строки репо не трогаются) | `.gitignore` |
+| `pins` | merge отдельных ключей; остальной файл — зона репо | **краснеет** только на этих ключах | `package.json` (`packageManager`+`engines.node`) |
+| `seed` | создать, только если отсутствует | НЕ drift — репо легитимно правит | `nx.json`, `biome.json`, `.golangci.yml`, `.devcontainer/*` |
+
+`exact`/`block`/`pins` — **рамка** (enforced, drift-fail на своей части). `seed` — **докрутка**
+(дефолт-сид, дальше зона репо/пресета). `block` и `pins` остаются код-хендлерами (splice/merge —
+не чистые данные); `mode` лишь **выбирает** хендлер. Расширить рамку новым режимом = добавить
+хендлер в `DISPATCH` + объявить `mode` у записей, не ветвить логику по имени файла.
 
 ## Стек репо (node / go / frontend)
 

@@ -56,10 +56,12 @@ function printVersion() {
 //                  frontend→web-ci.yml standalone, БЕЗ nx). ci.permOrder — канон permissions
 //                  (go/frontend: contents:read; node: +actions,+packages).
 const TEMPLATE = JSON.parse(readFileSync(join(PKG_DIR, "template.json"), "utf8"));
-const MANAGED = TEMPLATE.managed;
-const COMMON_TEMPLATES = TEMPLATE.templates.common;
-const NODE_TEMPLATES = TEMPLATE.templates.node;
-const GO_TEMPLATES = TEMPLATE.templates.go;
+const MANAGED = TEMPLATE.managed; // mode exact
+const BLOCK = TEMPLATE.block; // mode block (.gitignore splice)
+const PINS = TEMPLATE.pins; // mode pins (package.json merge)
+const COMMON_TEMPLATES = TEMPLATE.templates.common; // mode seed
+const NODE_TEMPLATES = TEMPLATE.templates.node; // mode seed
+const GO_TEMPLATES = TEMPLATE.templates.go; // mode seed
 const CI_JOB = TEMPLATE.ci.jobs;
 const PERM_ORDER = TEMPLATE.ci.permOrder;
 
@@ -137,13 +139,13 @@ function buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }) {
 
 // --- .gitignore managed-блок -------------------------------------------------
 
-function gitignoreBlock() {
-  return `${BLOCK_START}\n${readEtalon("gitignore-block").trimEnd()}\n${BLOCK_END}\n`;
+function gitignoreBlock(src) {
+  return `${BLOCK_START}\n${readEtalon(src).trimEnd()}\n${BLOCK_END}\n`;
 }
 
-// Возвращает { expected } содержимого .gitignore после синка блока.
-function spliceGitignore(current) {
-  const block = gitignoreBlock();
+// Возвращает { expected } содержимого .gitignore после синка блока (src эталона блока — из манифеста).
+function spliceGitignore(current, src) {
+  const block = gitignoreBlock(src);
   if (current === null) return { expected: block };
   const start = current.indexOf(BLOCK_START);
   const end = current.indexOf(BLOCK_END);
@@ -157,10 +159,95 @@ function spliceGitignore(current) {
   };
 }
 
-function pins() {
-  const tpl = JSON.parse(readEtalon("package-template.json"));
+function pins(src) {
+  const tpl = JSON.parse(readEtalon(src));
   return { packageManager: tpl.packageManager, node: tpl.engines.node };
 }
+
+// --- Apply-хендлеры по режиму (DEVOPSER-99) ----------------------------------
+// mode в template.json ВЫБИРАЕТ хендлер (диспатч), не массив/секция. Поведение — как было.
+// ctx = { target, check, drift, actions, name }. Хендлеры пишут в drift[] (--check) / actions[].
+
+// exact — managed: точная копия эталона, drift-fail; exec:true → mode 0755 (сверяется и в --check).
+function applyExact(e, { target, check, drift, actions }) {
+  const expected = readEtalon(e.src);
+  const path = join(target, e.dest);
+  const current = readTarget(path);
+  if (current !== expected) {
+    if (check)
+      drift.push(`${e.dest}: ${current === null ? "отсутствует" : "отличается от эталона"}`);
+    else {
+      writeLf(path, expected, e.exec);
+      actions.push(`${e.dest}: ${current === null ? "создан" : "синкнут"}`);
+    }
+  }
+  // exec-бит гарантируем независимо от совпадения контента (init); в --check — сверяем как дрейф.
+  if (e.exec && existsSync(path)) {
+    if (check) {
+      if ((statSync(path).mode & 0o777) !== 0o755) drift.push(`${e.dest}: exec-бит ≠ 0755`);
+    } else if (ensureExec(path)) {
+      actions.push(`${e.dest}: exec-бит (0755) починен`);
+    }
+  }
+}
+
+// block — splice managed-блока в файл, который репо ТОЖЕ правит (.gitignore): дрейфит только блок.
+function applyBlock(e, { target, check, drift, actions }) {
+  const path = join(target, e.dest);
+  const current = readTarget(path);
+  const { expected } = spliceGitignore(current, e.src);
+  if (current === expected) return;
+  if (check)
+    drift.push(
+      `${e.dest}: managed-блок ${current?.includes(BLOCK_START) ? "отличается" : "отсутствует"}`,
+    );
+  else {
+    writeLf(path, expected);
+    actions.push(`${e.dest}: managed-блок синкнут`);
+  }
+}
+
+// pins — merge отдельных ключей (packageManager + engines.node): дрейф только на них, остальное
+// package.json — зона репо. Отсутствует файл → создаём из шаблона (тот же src).
+function applyPins(e, { target, check, drift, actions, name }) {
+  const path = join(target, e.dest);
+  const raw = readTarget(path);
+  const { packageManager, node } = pins(e.src);
+  if (raw === null) {
+    if (check) drift.push(`${e.dest}: отсутствует`);
+    else {
+      writeLf(path, readEtalon(e.src).replace("__NAME__", name));
+      actions.push(`${e.dest}: создан из шаблона`);
+    }
+    return;
+  }
+  const pkg = JSON.parse(raw);
+  const bad = [];
+  if (pkg.packageManager !== packageManager)
+    bad.push(`packageManager: ${pkg.packageManager ?? "нет"} → ${packageManager}`);
+  if (pkg.engines?.node !== node) bad.push(`engines.node: ${pkg.engines?.node ?? "нет"} → ${node}`);
+  if (!bad.length) return;
+  if (check) drift.push(`${e.dest} пины: ${bad.join("; ")}`);
+  else {
+    pkg.packageManager = packageManager;
+    pkg.engines = { ...pkg.engines, node };
+    writeLf(path, `${JSON.stringify(pkg, null, 2)}\n`);
+    actions.push(`${e.dest}: пины починены (${bad.join("; ")})`);
+  }
+}
+
+// seed — init-only: создать, только если отсутствует; НЕ drift-managed (репо легитимно правит).
+// __NAME__ → basename(target): package.json name, devcontainer network-alias (single-origin).
+function applySeed(e, { target, actions, name }) {
+  const path = join(target, e.dest);
+  if (existsSync(path)) return;
+  writeLf(path, readEtalon(e.src).replaceAll("__NAME__", name));
+  actions.push(`${e.dest}: создан из шаблона`);
+}
+
+const DISPATCH = { exact: applyExact, block: applyBlock, pins: applyPins, seed: applySeed };
+// Пресет живёт в рамке (stack=any или ∩ стек репо).
+const inStack = (e, stacks) => !e.stack || asList(e.stack).some((s) => stacks.includes(s));
 
 // --- Пресет-контракт (DEVOPSER-98) -------------------------------------------
 // Пресет = дефолты ВНУТРИ рамки (DEVOPSER-95); template.json.presets биндит слот → пакет@ver,
@@ -243,94 +330,20 @@ function main() {
   const drift = [];
   const actions = [];
 
-  // 1. Точные managed-копии (общий набор, все стеки).
-  for (const { src, dest, exec } of MANAGED) {
-    const expected = readEtalon(src);
-    const path = join(target, dest);
-    const current = readTarget(path);
-    if (current !== expected) {
-      if (check)
-        drift.push(`${dest}: ${current === null ? "отсутствует" : "отличается от эталона"}`);
-      else {
-        writeLf(path, expected, exec);
-        actions.push(`${dest}: ${current === null ? "создан" : "синкнут"}`);
-      }
-    }
-    // exec-бит гарантируем независимо от совпадения контента (init-путь);
-    // в --check — сверяем его как дрейф (файл с совпавшим контентом, но 100644
-    // проходил бы зелёным, а launcher сломан: husky ловит, CI-drift был слеп).
-    if (exec && existsSync(path)) {
-      if (check) {
-        if ((statSync(path).mode & 0o777) !== 0o755) drift.push(`${dest}: exec-бит ≠ 0755`);
-      } else if (ensureExec(path)) {
-        actions.push(`${dest}: exec-бит (0755) починен`);
-      }
-    }
-  }
+  // 1-4. Рамка применяется ДИСПАТЧЕМ по declared mode (DEVOPSER-99), не по секции/массиву.
+  // Порядок применения (как прежде): exact (managed, все стеки) → block (.gitignore) →
+  // pins (package.json, node) → seed (init-only, per stack; только init, НЕ drift). Каждая
+  // запись несёт mode → DISPATCH выбирает хендлер. seed в --check не участвует (init-only).
+  const ctx = { target, check, drift, actions, name: basename(target) };
+  const seed = check
+    ? []
+    : [...COMMON_TEMPLATES, ...(hasNode ? NODE_TEMPLATES : []), ...(hasGo ? GO_TEMPLATES : [])];
+  const frame = [...MANAGED, ...BLOCK, ...PINS.filter((e) => inStack(e, stacks)), ...seed];
+  for (const e of frame) DISPATCH[e.mode](e, ctx);
 
-  // 2. Managed-блок .gitignore (общий).
-  const giPath = join(target, ".gitignore");
-  const giCurrent = readTarget(giPath);
-  const { expected: giExpected } = spliceGitignore(giCurrent);
-  if (giCurrent !== giExpected) {
-    if (check)
-      drift.push(
-        `.gitignore: managed-блок ${giCurrent?.includes(BLOCK_START) ? "отличается" : "отсутствует"}`,
-      );
-    else {
-      writeLf(giPath, giExpected);
-      actions.push(".gitignore: managed-блок синкнут");
-    }
-  }
-
-  // 3. package.json пины — только node-стек (nx-монорепо в корне). go-репо и standalone-фронт
-  //    корневой package.json не несут (у фронта он в своём воркспейсе).
-  if (hasNode) {
-    const pkgPath = join(target, "package.json");
-    const pkgRaw = readTarget(pkgPath);
-    const { packageManager, node } = pins();
-    if (pkgRaw === null) {
-      if (check) drift.push("package.json: отсутствует");
-      else {
-        const tpl = readEtalon("package-template.json").replace("__NAME__", basename(target));
-        writeLf(pkgPath, tpl);
-        actions.push("package.json: создан из шаблона");
-      }
-    } else {
-      const pkg = JSON.parse(pkgRaw);
-      const bad = [];
-      if (pkg.packageManager !== packageManager)
-        bad.push(`packageManager: ${pkg.packageManager ?? "нет"} → ${packageManager}`);
-      if (pkg.engines?.node !== node)
-        bad.push(`engines.node: ${pkg.engines?.node ?? "нет"} → ${node}`);
-      if (bad.length) {
-        if (check) drift.push(`package.json пины: ${bad.join("; ")}`);
-        else {
-          pkg.packageManager = packageManager;
-          pkg.engines = { ...pkg.engines, node };
-          writeLf(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-          actions.push(`package.json: пины починены (${bad.join("; ")})`);
-        }
-      }
-    }
-  }
-
-  // 4. Init-only шаблоны — по стеку, только если отсутствуют. НЕ drift-managed.
-  // __NAME__ → basename(target): package.json name, devcontainer network-alias (single-origin).
+  // 5. CI-caller'ы per stack (mode seed по смыслу, но ci.yml — вычисляемый per-stack артефакт:
+  //    отдельный код-хендлер). ci.yml по стеку + pr-title всем; init-only.
   if (!check) {
-    const templates = [
-      ...COMMON_TEMPLATES,
-      ...(hasNode ? NODE_TEMPLATES : []),
-      ...(hasGo ? GO_TEMPLATES : []),
-    ];
-    for (const { src, dest } of templates) {
-      const path = join(target, dest);
-      if (existsSync(path)) continue;
-      writeLf(path, readEtalon(src).replaceAll("__NAME__", basename(target)));
-      actions.push(`${dest}: создан из шаблона`);
-    }
-
-    // 5. CI-caller'ы per stack (init-only): ci.yml по стеку + pr-title всем.
     const ciPath = join(target, ".github/workflows/ci.yml");
     if (!existsSync(ciPath)) {
       writeLf(ciPath, buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }));

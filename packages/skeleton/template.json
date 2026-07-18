@@ -1,30 +1,43 @@
 {
-  "$comment": "template.json — ДЕКЛАРАЦИЯ РАМКИ skeleton-темплейта (DEVOPSER-95: темплейт = рамка, жёсткая). Источник правды состава: что managed (drift-fail, уехать нельзя), что init-only (сид, репо легитимно правит), per-stack, CI-callers. init.mjs ЧИТАЕТ этот файл — не хардкодит. Смысл/rationale каждого файла — в README.md (Managed-набор + Dev-сервисы). exec:true → материализуется 0755 (B7). ports/пины node — из files/package-template.json (не дублируем).",
+  "$comment": "template.json — ДЕКЛАРАЦИЯ РАМКИ skeleton-темплейта (DEVOPSER-95: темплейт = жёсткая рамка). Источник правды состава + РЕЖИМА ПРИМЕНЕНИЯ (mode, DEVOPSER-99: exact|seed|block|pins — КАК файл кладётся). init.mjs ЧИТАЕТ манифест и ДИСПАТЧИТ по declared mode (хендлеры), не по массиву. exact=managed (точная копия+drift, уехать нельзя; exec:true → 0755). seed=init-only (создать если нет, НЕ drift — репо правит). block=splice managed-блока в файл репо (.gitignore). pins=merge отдельных ключей (package.json packageManager/engines.node). block/pins — код-хендлеры (splice/merge не чистые данные), mode лишь ВЫБИРАЕТ хендлер. slot → пресет (DEVOPSER-98).",
   "managed": [
-    { "src": "editorconfig", "dest": ".editorconfig" },
-    { "src": "gitattributes", "dest": ".gitattributes" },
-    { "src": "npmrc", "dest": ".npmrc" },
-    { "src": "husky-pre-commit", "dest": ".husky/pre-commit" },
-    { "src": "husky-pre-push", "dest": ".husky/pre-push" },
-    { "src": "devbox-services.mjs", "dest": "scripts/devbox-services.mjs" },
-    { "src": "devbox-session.sh", "dest": "scripts/devbox-session.sh", "exec": true },
-    { "src": "devbox.sh", "dest": "scripts/devbox.sh", "exec": true },
-    { "src": "devbox-manifest.mjs", "dest": "scripts/devbox-manifest.mjs" },
-    { "src": "devbox-publish.mjs", "dest": "scripts/devbox-publish.mjs" }
+    { "src": "editorconfig", "dest": ".editorconfig", "mode": "exact" },
+    { "src": "gitattributes", "dest": ".gitattributes", "mode": "exact" },
+    { "src": "npmrc", "dest": ".npmrc", "mode": "exact" },
+    { "src": "husky-pre-commit", "dest": ".husky/pre-commit", "mode": "exact" },
+    { "src": "husky-pre-push", "dest": ".husky/pre-push", "mode": "exact" },
+    { "src": "devbox-services.mjs", "dest": "scripts/devbox-services.mjs", "mode": "exact" },
+    {
+      "src": "devbox-session.sh",
+      "dest": "scripts/devbox-session.sh",
+      "exec": true,
+      "mode": "exact"
+    },
+    { "src": "devbox.sh", "dest": "scripts/devbox.sh", "exec": true, "mode": "exact" },
+    { "src": "devbox-manifest.mjs", "dest": "scripts/devbox-manifest.mjs", "mode": "exact" },
+    { "src": "devbox-publish.mjs", "dest": "scripts/devbox-publish.mjs", "mode": "exact" }
+  ],
+  "block": [{ "src": "gitignore-block", "dest": ".gitignore", "mode": "block" }],
+  "pins": [
+    { "src": "package-template.json", "dest": "package.json", "stack": "node", "mode": "pins" }
   ],
   "templates": {
     "common": [
-      { "src": "devcontainer-template.json", "dest": ".devcontainer/devcontainer.json" },
-      { "src": "devbox.services.json", "dest": "devbox.services.json" }
+      {
+        "src": "devcontainer-template.json",
+        "dest": ".devcontainer/devcontainer.json",
+        "mode": "seed"
+      },
+      { "src": "devbox.services.json", "dest": "devbox.services.json", "mode": "seed" }
     ],
     "node": [
-      { "src": "nx-template.json", "dest": "nx.json", "slot": "nx" },
-      { "src": "biome-template.json", "dest": "biome.json", "slot": "biome" },
-      { "src": "dependabot-template.yml", "dest": ".github/dependabot.yml" }
+      { "src": "nx-template.json", "dest": "nx.json", "slot": "nx", "mode": "seed" },
+      { "src": "biome-template.json", "dest": "biome.json", "slot": "biome", "mode": "seed" },
+      { "src": "dependabot-template.yml", "dest": ".github/dependabot.yml", "mode": "seed" }
     ],
     "go": [
-      { "src": "go/golangci-template.yml", "dest": ".golangci.yml" },
-      { "src": "go/sqlc-template.yaml", "dest": "sqlc.yaml" }
+      { "src": "go/golangci-template.yml", "dest": ".golangci.yml", "mode": "seed" },
+      { "src": "go/sqlc-template.yaml", "dest": "sqlc.yaml", "mode": "seed" }
     ]
   },
   "presets": {
