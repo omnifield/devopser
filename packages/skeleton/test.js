@@ -389,3 +389,55 @@ test("version-guard: warn, если УСТАНОВЛЕННАЯ версия пр
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- Таргеты пресетов (DEVOPSER-101): категория того, что пресет настраивает ---
+
+test("каждый пресет объявляет target = repo-config", () => {
+  for (const name of ["nx-preset", "biome-preset", "vite-preset"]) {
+    assert.equal(PRESET_PKG(name).omnifield.target, "repo-config", `${name}.omnifield.target`);
+  }
+});
+
+test("template.json таксономия: repo-config active, release/git-flow declared (plug-in точки)", () => {
+  const t = TEMPLATE.targets;
+  assert.ok(t, "template.json должен нести таксономию targets");
+  assert.equal(t["repo-config"], "active");
+  assert.equal(t.release, "declared");
+  assert.equal(t["git-flow"], "declared");
+});
+
+test("init репортит группировку по target (repo-config: nx,biome,vite; release/git-flow пусты)", () => {
+  const repo = mkRepo();
+  try {
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /\[skeleton targets\]/, "репорт по target печатается");
+    assert.match(r.stdout, /repo-config: nx, biome, vite/, "repo-config группирует свои slots");
+    assert.match(r.stdout, /release: —/, "release — declared-empty plug-in");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("пресет с unknown target → loud-fail (target вне таксономии)", () => {
+  const repo = mkRepo();
+  try {
+    run(repo); // node-стек; nx.json присутствует
+    // Фейковый node_modules-пресет с валидными slot/stack, но target вне таксономии.
+    const nm = join(repo, "node_modules/@omnifield/nx-preset");
+    mkdirSync(nm, { recursive: true });
+    writeFileSync(
+      join(nm, "package.json"),
+      `${JSON.stringify({
+        name: "@omnifield/nx-preset",
+        version: "0.1.1",
+        omnifield: { kind: "preset", slot: "nx", stack: "node", target: "bogus-target" },
+      })}\n`,
+    );
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "unknown target → exit 1");
+    assert.match(c.stderr, /target 'bogus-target'/, "loud-fail называет неизвестный target");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

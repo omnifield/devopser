@@ -55,7 +55,7 @@ git-flow/release-пресеты (DEVOPSER-108), не только repo-config.
 **1. Метаданные пресета** — блок `omnifield` в `package.json` пресета (единый источник):
 
 ```json
-"omnifield": { "kind": "preset", "slot": "nx", "stack": "node", "mechanism": "extends" }
+"omnifield": { "kind": "preset", "slot": "nx", "stack": "node", "mechanism": "extends", "target": "repo-config" }
 ```
 
 | Поле | Что |
@@ -64,6 +64,7 @@ git-flow/release-пресеты (DEVOPSER-108), не только repo-config.
 | `slot` | какой слот рамки наполняет (`nx`/`biome`/`vite`/…) |
 | `stack` | где валиден: `node`\|`go`\|`frontend`\|`any` (или массив) — для валидации «в рамке» |
 | `mechanism` | как потребляется: `extends` (nx/biome) \| `import` (vite) |
+| `target` | КАТЕГОРИЯ настраиваемого: `repo-config`\|`release`\|`git-flow` (см. «Таргеты пресетов») |
 
 Текущие пресеты: `@omnifield/nx-preset` (slot `nx`, stack `node`, extends) · `@omnifield/biome-preset`
 (slot `biome`, stack `node`, extends) · `@omnifield/vite-preset` (slot `vite`, stack `frontend`, import).
@@ -90,6 +91,34 @@ DEVOPSER-108), а не имплицитом в `extends`-строке конфи
   (node-пресет на go-репо = вне рамки). Метаданные резолвятся из `node_modules` потребителя
   (после install) → `packages/<name>` клона devopser; не резолвится (до install) — best-effort,
   жёсткий гейт живёт в CI `--check`, где зависимости стоят.
+
+## Таргеты пресетов (`target`, DEVOPSER-101)
+
+**`target` = КАТЕГОРИЯ того, что пресет настраивает** — ось группировки слотов (не путать: `slot` =
+конкретный конфиг `nx`/`biome`/`vite`; `target` = его класс). Движок **target-general**: новый класс
+пресетов подключается ДЕКЛАРАЦИЕЙ `target`, а не спецкейсом в `init.mjs`.
+
+Таксономия объявлена в `template.json.targets` (известные таргеты = ключи; статус — значение):
+
+| `target` | Статус | Что |
+|---|---|---|
+| `repo-config` | `active` | конфиги репо — движок обрабатывает (слоты `nx`, `biome`, `vite`) |
+| `release` | `declared` | plug-in точка (пусто) — под будущее |
+| `git-flow` | `declared` | plug-in точка (пусто) — под DEVOPSER-103 |
+
+`declared` = движок ЗНАЕТ таргет как валидный (пустая точка расширения), но **логики нет** —
+`release`/`git-flow` пока только декларация, без release/git механики. `init.mjs` валидирует
+declared `target` пресета против таксономии: **unknown target → loud-fail** (в init и `--check`),
+и репортит группировку (`[skeleton targets] repo-config: nx, biome, vite | release: — | git-flow: —`).
+
+**Как git-flow (DEVOPSER-103) подключится — декларацией, не кодом:**
+1. git-flow-пресет издаётся с метаданными `omnifield.target: "git-flow"` (+ свой `slot`, напр.
+   `branch-protection`, `mechanism`);
+2. `template.json.presets` биндит его слот → `@omnifield/git-flow-preset@^ver`; статус `git-flow`
+   в таксономии переводится `declared → active`, когда движок начнёт его обрабатывать.
+
+Пресет-контракт (метаданные + биндинг + валидация «в рамке» + версии) — **общий**, поэтому
+git-flow ложится на тот же механизм, что repo-config, без нового спецкейса (композиция DEVOPSER-108).
 
 ## Версионирование пресетов + bump-дисциплина (DEVOPSER-100)
 

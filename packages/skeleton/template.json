@@ -46,6 +46,12 @@
     "biome": "@omnifield/biome-preset@^0.1.1",
     "vite": "@omnifield/vite-preset@^0.1.0"
   },
+  "targets": {
+    "$comment": "ТАКСОНОМИЯ таргетов (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает — ось группировки slots (slot=конкретный конфиг, target=его класс). Известные таргеты = ключи; init.mjs валит пресет с target ∉ этого набора (loud-fail). repo-config = active (движок обрабатывает: nx/biome/vite). release/git-flow = declared — пустые plug-in точки под DEVOPSER-103/будущее: движок их ЗНАЕТ (валидный target), но логики НЕТ. git-flow-пресет подключится, объявив target:git-flow в своих метаданных — декларацией, не спецкейсом в init.",
+    "repo-config": "active",
+    "release": "declared",
+    "git-flow": "declared"
+  },
   "ci": {
     "jobs": {
       "go": { "name": "go", "reusable": "go-ci.yml" },
