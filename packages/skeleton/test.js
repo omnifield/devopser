@@ -138,3 +138,67 @@ test("--check не считает дрейфом правку init-only шабл
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- Пресет-контракт (DEVOPSER-98): пресет = дефолты внутри рамки --------------
+
+const PRESET_PKG = (name) =>
+  JSON.parse(readFileSync(join(PKG_DIR, "..", name, "package.json"), "utf8"));
+
+test("каждый пресет объявляет метаданные omnifield (kind/slot/stack/mechanism)", () => {
+  for (const name of ["nx-preset", "biome-preset", "vite-preset"]) {
+    const o = PRESET_PKG(name).omnifield;
+    assert.ok(o, `${name}: блок omnifield обязателен`);
+    assert.equal(o.kind, "preset");
+    for (const k of ["slot", "stack", "mechanism"]) {
+      assert.equal(typeof o[k], "string", `${name}.omnifield.${k} = string`);
+    }
+  }
+});
+
+test("template.json биндит слот → @omnifield/X-preset@^ver; slot совпал с метаданными пресета", () => {
+  const presets = TEMPLATE.presets;
+  assert.ok(presets, "template.json должен нести биндинг presets");
+  const slotToLocal = { nx: "nx-preset", biome: "biome-preset", vite: "vite-preset" };
+  for (const [slot, ref] of Object.entries(presets)) {
+    if (slot.startsWith("$")) continue;
+    // форма name@version (scoped: версия после последнего @).
+    const at = ref.lastIndexOf("@");
+    assert.ok(at > 0, `биндинг '${slot}' = '${ref}' должен нести версию`);
+    const pkg = ref.slice(0, at);
+    assert.match(ref.slice(at + 1), /^[\^~]?\d/, `версия в '${ref}'`);
+    // slot биндинга == slot, объявленный пресетом (source-of-frame: DEVOPSER-95/108).
+    const meta = PRESET_PKG(slotToLocal[slot]).omnifield;
+    assert.equal(pkg, `@omnifield/${slotToLocal[slot]}`, `биндинг '${slot}' → правильный пакет`);
+    assert.equal(meta.slot, slot, `пресет ${pkg} объявляет slot '${slot}'`);
+  }
+});
+
+test("пресет ВНЕ рамки → loud-fail (node-пресет на go-репо)", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "go.mod"), "module x\n"); // стек репо = [go]
+    run(repo);
+    // Симулируем дрейф: в go-репо появился nx.json (тянет node-пресет @omnifield/nx-preset).
+    writeFileSync(join(repo, "nx.json"), '{ "extends": "@omnifield/nx-preset/nx.json" }\n');
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "node-пресет на go-репо → exit 1");
+    assert.match(c.stderr, /вне рамки/, "loud-fail называет выход за рамку");
+    assert.match(c.stderr, /nx-preset/, "ошибка называет пресет");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("пресет В рамке → ok (node-пресет на node-репо; preset-check не срабатывает)", () => {
+  const repo = mkRepo();
+  try {
+    const r = run(repo); // node-стек по дефолту → nx.json/biome.json из node-пресетов
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(existsSync(join(repo, "nx.json")));
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, c.stderr);
+    assert.doesNotMatch(c.stderr, /вне рамки/, "пресет в рамке — без preset-fail");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

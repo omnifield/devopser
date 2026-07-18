@@ -18,14 +18,20 @@
       { "src": "devbox.services.json", "dest": "devbox.services.json" }
     ],
     "node": [
-      { "src": "nx-template.json", "dest": "nx.json" },
-      { "src": "biome-template.json", "dest": "biome.json" },
+      { "src": "nx-template.json", "dest": "nx.json", "slot": "nx" },
+      { "src": "biome-template.json", "dest": "biome.json", "slot": "biome" },
       { "src": "dependabot-template.yml", "dest": ".github/dependabot.yml" }
     ],
     "go": [
       { "src": "go/golangci-template.yml", "dest": ".golangci.yml" },
       { "src": "go/sqlc-template.yaml", "dest": "sqlc.yaml" }
     ]
+  },
+  "presets": {
+    "$comment": "Биндинг слот → @omnifield/X-preset@^ver (DEVOPSER-98): рамка знает свои пресеты по name@version, не имплицитом в extends-строке конфига. Валиден для ЛЮБОГО пресета (repo-config сейчас; git-flow/release — впредь, DEVOPSER-108). Declared stack/slot/mechanism пресет объявляет сам (блок omnifield его package.json) — тут только пин; init.mjs сверяет «пресет в рамке».",
+    "nx": "@omnifield/nx-preset@^0.1.1",
+    "biome": "@omnifield/biome-preset@^0.1.1",
+    "vite": "@omnifield/vite-preset@^0.1.0"
   },
   "ci": {
     "jobs": {

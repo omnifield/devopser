@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Omnifield frontend-пресет: single-origin base из манифеста продукта (единый источник) + server-канон (host/allowedHosts) + плагин-слот под будущий фреймворк (briefs/vite-preset-single-origin-base.md). Builder-agnostic ядро (manifest.js) — миграция на свой фреймворк = конфиг, не rewrite.",
+  "omnifield": {
+    "kind": "preset",
+    "slot": "vite",
+    "stack": "frontend",
+    "mechanism": "import"
+  },
   "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
