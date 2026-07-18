@@ -5,6 +5,26 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 в каждом продукт-репо, живут эталоном в `files/`; `init.mjs` их материализует,
 синкает и сверяет — **по СТЕКУ репо**, не по имени. Zero-deps (только `node:*`).
 
+## Рамка = `template.json` (декларация, не хардкод)
+
+Состав рамки — **что managed** (drift-fail, уехать нельзя), **что init-only** (сид, репо
+легитимно правит), per-stack, CI-caller'ы — объявлен декларативно в **`template.json`**
+(DEVOPSER-95: темплейт = жёсткая рамка). `init.mjs` этот манифест **читает и исполняет**,
+а не хардкодит — рамка есть контракт-данные, `init.mjs` — исполнитель. Расширить/сузить
+рамку = правка `template.json` (через architect — это контракт потребителей), не патч логики.
+
+| Ключ | Что объявляет |
+|---|---|
+| `managed[]` | `{src,dest,exec?}` — точная копия эталона, drift-managed; `exec:true` → mode `0755` |
+| `templates.common[]` · `templates.node[]` · `templates.go[]` | init-only шаблоны per stack (создаются, если отсутствуют; НЕ drift-managed) |
+| `ci.jobs.{go,node,frontend}` | CI-caller per stack (`{name,reusable}`) |
+| `ci.permOrder[]` | канон-порядок `permissions` объединённого `ci.yml` |
+
+Пины node (`packageManager`/`engines.node`) — из `files/package-template.json` (не дублируются
+в манифесте). Тест `test.js` (`node --test`) сторожит инвариант «манифест = источник рамки»:
+init материализует ровно объявленный манифестом состав, drift-check краснеет на уехавшем
+`managed`, но не на правке init-only.
+
 ## Стек репо (node / go / frontend)
 
 `init.mjs` ветвится по стеку, не по имени продукта. Стек — из

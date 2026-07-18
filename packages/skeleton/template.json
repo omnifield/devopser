@@ -1,0 +1,38 @@
+{
+  "$comment": "template.json — ДЕКЛАРАЦИЯ РАМКИ skeleton-темплейта (DEVOPSER-95: темплейт = рамка, жёсткая). Источник правды состава: что managed (drift-fail, уехать нельзя), что init-only (сид, репо легитимно правит), per-stack, CI-callers. init.mjs ЧИТАЕТ этот файл — не хардкодит. Смысл/rationale каждого файла — в README.md (Managed-набор + Dev-сервисы). exec:true → материализуется 0755 (B7). ports/пины node — из files/package-template.json (не дублируем).",
+  "managed": [
+    { "src": "editorconfig", "dest": ".editorconfig" },
+    { "src": "gitattributes", "dest": ".gitattributes" },
+    { "src": "npmrc", "dest": ".npmrc" },
+    { "src": "husky-pre-commit", "dest": ".husky/pre-commit" },
+    { "src": "husky-pre-push", "dest": ".husky/pre-push" },
+    { "src": "devbox-services.mjs", "dest": "scripts/devbox-services.mjs" },
+    { "src": "devbox-session.sh", "dest": "scripts/devbox-session.sh", "exec": true },
+    { "src": "devbox.sh", "dest": "scripts/devbox.sh", "exec": true },
+    { "src": "devbox-manifest.mjs", "dest": "scripts/devbox-manifest.mjs" },
+    { "src": "devbox-publish.mjs", "dest": "scripts/devbox-publish.mjs" }
+  ],
+  "templates": {
+    "common": [
+      { "src": "devcontainer-template.json", "dest": ".devcontainer/devcontainer.json" },
+      { "src": "devbox.services.json", "dest": "devbox.services.json" }
+    ],
+    "node": [
+      { "src": "nx-template.json", "dest": "nx.json" },
+      { "src": "biome-template.json", "dest": "biome.json" },
+      { "src": "dependabot-template.yml", "dest": ".github/dependabot.yml" }
+    ],
+    "go": [
+      { "src": "go/golangci-template.yml", "dest": ".golangci.yml" },
+      { "src": "go/sqlc-template.yaml", "dest": "sqlc.yaml" }
+    ]
+  },
+  "ci": {
+    "jobs": {
+      "go": { "name": "go", "reusable": "go-ci.yml" },
+      "node": { "name": "node", "reusable": "node-ci.yml" },
+      "frontend": { "name": "web", "reusable": "web-ci.yml" }
+    },
+    "permOrder": ["contents: read", "actions: read", "packages: read"]
+  }
+}
