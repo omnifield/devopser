@@ -6,7 +6,8 @@
     "kind": "preset",
     "slot": "nx",
     "stack": "node",
-    "mechanism": "extends"
+    "mechanism": "extends",
+    "target": "repo-config"
   },
   "files": [
     "nx.json"

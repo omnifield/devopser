@@ -6,7 +6,8 @@
     "kind": "preset",
     "slot": "biome",
     "stack": "node",
-    "mechanism": "extends"
+    "mechanism": "extends",
+    "target": "repo-config"
   },
   "files": [
     "biome.json"

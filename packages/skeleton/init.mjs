@@ -292,6 +292,11 @@ const stackInFrame = (presetStack, stacks) => {
   return ps.includes("any") || ps.some((s) => stacks.includes(s));
 };
 
+// Известные таргеты (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает (ось
+// группировки slots). Набор = ключи template.json.targets; пресет с target вне набора → loud-fail.
+const knownTargets = () =>
+  new Set(Object.keys(TEMPLATE.targets ?? {}).filter((t) => !t.startsWith("$")));
+
 // «Пресет в рамке»: для каждого bound-пресета — (а) slot биндинга == slot, объявленный пресетом;
 // (б) если конфиг слота ПРИСУТСТВУЕТ в репо, declared stack пресета обязан быть в рамке стека
 // репо (node-пресет на go-репо = вне рамки → loud-fail). Возвращает список ошибок.
@@ -313,6 +318,12 @@ function validatePresets(target, stacks) {
       errors.push(`биндинг '${slot}' → ${pkg}: kind '${meta.kind}' ≠ preset`);
     if (meta.slot !== slot)
       errors.push(`биндинг '${slot}' → ${pkg}, но пресет объявляет slot '${meta.slot}'`);
+    // target пресета обязан быть из известной таксономии (DEVOPSER-101). unknown → loud-fail.
+    const targets = knownTargets();
+    if (!targets.has(meta.target))
+      errors.push(
+        `биндинг '${slot}' → ${pkg}: target '${meta.target}' ∉ известные {${[...targets].join(", ")}}`,
+      );
     const dest = slotDest[slot];
     if (dest && existsSync(join(target, dest)) && !stackInFrame(meta.stack, stacks))
       errors.push(
@@ -320,6 +331,22 @@ function validatePresets(target, stacks) {
       );
   }
   return errors;
+}
+
+// Группировка bound-пресетов по declared target (репорт; DEVOPSER-101). Только resolvable мета;
+// показывает активные (repo-config) и declared-empty (release/git-flow) plug-in точки.
+function reportTargets(target) {
+  const groups = {};
+  for (const t of knownTargets()) groups[t] = [];
+  for (const [slot, ref] of Object.entries(TEMPLATE.presets ?? {})) {
+    if (slot.startsWith("$")) continue;
+    const meta = resolvePresetMeta(parsePresetRef(ref).pkg, target);
+    if (meta?.target && groups[meta.target]) groups[meta.target].push(slot);
+  }
+  const line = Object.entries(groups)
+    .map(([t, slots]) => `${t}: ${slots.length ? slots.join(", ") : "—"}`)
+    .join(" | ");
+  console.log(`[skeleton targets] ${line}`);
 }
 
 // --- Версионирование пресетов (DEVOPSER-100) ---------------------------------
@@ -431,6 +458,8 @@ function main() {
   // Version-guard (DEVOPSER-100): warn при отставании УСТАНОВЛЕННОЙ версии пресета от биндинга
   // (в обоих режимах, best-effort — не гейт, дрейф ловит preset-деп package.json).
   warnStalePresets(target);
+  // Группировка пресетов по target (DEVOPSER-101): repo-config активен, release/git-flow — пусты.
+  reportTargets(target);
 
   // 6. Пресет-контракт (DEVOPSER-98): каждый bound-пресет живёт ВНУТРИ рамки. Hard-гейт в
   //    ОБОИХ режимах (init после материализации / --check по факту репо) — loud-fail, не дрейф.
