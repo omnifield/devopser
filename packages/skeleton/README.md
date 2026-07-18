@@ -45,6 +45,52 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 не чистые данные); `mode` лишь **выбирает** хендлер. Расширить рамку новым режимом = добавить
 хендлер в `DISPATCH` + объявить `mode` у записей, не ветвить логику по имени файла.
 
+## Пресет-контракт (`slot` → пресет, DEVOPSER-98)
+
+Пресет = **дефолты ВНУТРИ рамки** (DEVOPSER-95): именованные версионированные значения крутилок,
+которые config-шаблон `extends`/`import`'ит, а продукт докручивает точечно. `slot` рамки (`nx`,
+`biome`, `vite`, …) наполняется конкретным пресетом. Контракт **общий** — под будущие
+git-flow/release-пресеты (DEVOPSER-108), не только repo-config.
+
+**1. Метаданные пресета** — блок `omnifield` в `package.json` пресета (единый источник):
+
+```json
+"omnifield": { "kind": "preset", "slot": "nx", "stack": "node", "mechanism": "extends" }
+```
+
+| Поле | Что |
+|---|---|
+| `kind` | `preset` (отличие от будущих `kind`-ов рамки) |
+| `slot` | какой слот рамки наполняет (`nx`/`biome`/`vite`/…) |
+| `stack` | где валиден: `node`\|`go`\|`frontend`\|`any` (или массив) — для валидации «в рамке» |
+| `mechanism` | как потребляется: `extends` (nx/biome) \| `import` (vite) |
+
+Текущие пресеты: `@omnifield/nx-preset` (slot `nx`, stack `node`, extends) · `@omnifield/biome-preset`
+(slot `biome`, stack `node`, extends) · `@omnifield/vite-preset` (slot `vite`, stack `frontend`, import).
+
+**2. Биндинг `template.json.presets`** — слот → `@omnifield/X-preset@^ver`: рамка знает свои
+пресеты по `name@version` (композиция ссылкой, не копией — направление consumer→provider,
+DEVOPSER-108), а не имплицитом в `extends`-строке конфига. Версия пиннится, `stack`/`slot`/
+`mechanism` объявляет сам пресет (не дублируется в биндинге).
+
+```json
+"presets": {
+  "nx":    "@omnifield/nx-preset@^0.1.1",
+  "biome": "@omnifield/biome-preset@^0.1.1",
+  "vite":  "@omnifield/vite-preset@^0.1.0"
+}
+```
+
+**3. Валидация «пресет в рамке»** (`init.mjs`, hard-гейт в **init И `--check`**): пресет не выходит
+за рамку (DEVOPSER-95). Для каждого bound-пресета:
+- **slot-консистентность**: `slot` биндинга обязан совпасть со `slot`, объявленным пресетом
+  (`kind` тоже сверяется);
+- **stack в рамке**: если конфиг слота **присутствует** в репо, declared `stack` пресета обязан
+  быть совместим со стеком репо (`any` или пересечение) — иначе **loud-fail, exit 1**
+  (node-пресет на go-репо = вне рамки). Метаданные резолвятся из `node_modules` потребителя
+  (после install) → `packages/<name>` клона devopser; не резолвится (до install) — best-effort,
+  жёсткий гейт живёт в CI `--check`, где зависимости стоят.
+
 ## Стек репо (node / go / frontend)
 
 `init.mjs` ветвится по стеку, не по имени продукта. Стек — из
