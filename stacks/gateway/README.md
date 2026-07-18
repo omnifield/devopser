@@ -19,6 +19,11 @@
 - **Up**: `docker compose up -d --build` → hub-core генерит дверь из registry → gateway
   стартует → http://localhost:8080/ — хаб. Регенерация после нового publish:
   `docker compose run --rm hub-core && docker compose restart gateway`.
+- **Drift-gate (runtime `--check`)**: сервис `hub-core-check` (профиль `check`) сверяет дверь
+  в door-volume с реестром — `docker compose --profile check run --rm hub-core-check` → exit 1
+  при ручном дрейфе / устаревшем образе (регенери). На обычном `up` не поднимается. Почему не
+  Docker HEALTHCHECK — hub-core одноразовый, а long-running gateway это чистый nginx (node нет);
+  почему не CI — входы (манифесты) в registry-volume, не в git. Ассерт живёт только в рантайме хаба.
 - **Маршруты** резолвятся docker-DNS в runtime (`resolver 127.0.0.11` + переменная в
   `proxy_pass`) → gateway **стартует, даже когда продукт-devbox ещё не поднят** (и когда
   реестр пуст — дверь валидна-пустая), отвечает 502 до подъёма продукта (ожидаемо, gateway первым).

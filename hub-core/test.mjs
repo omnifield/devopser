@@ -47,7 +47,8 @@ test("глоб registry-volume: продукт из <name>.yaml попадает
   try {
     s.run();
     const conf = s.nginx();
-    assert.match(conf, /location \/chater \{/, "фронт-маршрут /chater сгенерён");
+    assert.match(conf, /location = \/chater \{ return 301 \/chater\/; \}/, "bare /chater → 301 /chater/ (SPA под base из пресета)");
+    assert.match(conf, /location \/chater\/ \{/, "фронт-маршрут /chater/ сгенерён (trailing-slash)");
     assert.match(conf, /location \/api\/chater \{/, "backend-маршрут /api/chater сгенерён");
     assert.match(conf, /resolver 127\.0\.0\.11 valid=10s ipv6=off;/, "resolver сохранён (gateway стартует без продуктов)");
   } finally {
@@ -75,7 +76,7 @@ test("фронт-маршрут /<name> — pass-through (без rewrite)", () =
   try {
     s.run();
     const conf = s.nginx();
-    const front = conf.match(/location \/chater \{[\s\S]*?\n {4}\}/)[0];
+    const front = conf.match(/location \/chater\/ \{[\s\S]*?\n {4}\}/)[0];
     assert.doesNotMatch(front, /rewrite/, "фронт-маршрут без rewrite");
     assert.match(front, /proxy_pass http:\/\/\$up_chater_5173:5173;/, "upstream = chater:5173");
   } finally {
@@ -125,7 +126,7 @@ test("невалидный манифест: loud-warn skip, не роняет �
   const s = stand({ "chater.yaml": CHATER, "broken.yaml": "type: bogus\n" });
   try {
     const out = s.run(); // stdout/stderr; не бросает
-    assert.match(s.nginx(), /location \/chater \{/, "валидный сосед сгенерён");
+    assert.match(s.nginx(), /location \/chater\/ \{/, "валидный сосед сгенерён");
     assert.doesNotMatch(s.nginx(), /broken|bogus/, "битый манифест не в двери");
   } finally {
     s.cleanup();

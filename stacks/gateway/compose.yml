@@ -30,6 +30,24 @@ services:
       - omnifield-registry:/omnifield-registry:ro       # вход: манифесты продуктов (publish-volume)
       - omnifield-gateway-conf:/omnifield-gateway        # выход: дверь (nginx.conf + hub/index.html)
 
+  # Runtime drift-gate (идемпотентность-ассерт): сверяет дверь в door-volume с реестром,
+  # exit 1 при ручном дрейфе / устаревшем образе. НЕ пишет (door-volume смонтирован ro).
+  # Профиль `check` — на обычном `up` НЕ поднимается; зовётся ops/Канал'ом или по расписанию:
+  #   docker compose --profile check run --rm hub-core-check   (эквивалент: run --rm hub-core --check)
+  # Почему НЕ Docker HEALTHCHECK: node-несущий hub-core одноразовый (exit после генерации),
+  # а long-running gateway — чистый nginx (node/generate.mjs в нём нет). Почему НЕ CI-гейт:
+  # входы (манифесты) живут в registry-volume, не в git — дрейф детектируем только в рантайме хаба.
+  hub-core-check:
+    build: ../../hub-core
+    image: omnifield-hub-core:local
+    container_name: omnifield-hub-core-check
+    profiles: ["check"]
+    restart: "no"
+    command: ["--check"]
+    volumes:
+      - omnifield-registry:/omnifield-registry:ro          # вход: манифесты продуктов
+      - omnifield-gateway-conf:/omnifield-gateway:ro        # дверь — читаем (не пишем), сверяем с реестром
+
   gateway:
     image: nginx:1.29-alpine
     container_name: omnifield-gateway

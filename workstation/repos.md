@@ -5,6 +5,27 @@ Containers-only: git на хост не ставится — клон делае
 в примонтированную папку (`devbox/README.md` §Использование п.1); дальнейшие
 команды (`pnpm install` / `uv sync`) — тоже внутри контейнера.
 
+## Вход в devbox репо (канон, per-repo)
+
+У КАЖДОГО репо — **свой** devbox: монтирует только себя, в сети под alias = имя
+репо, наружу машины не торчит (single-origin `:8080`). Две команды из корня репо
+на ХОСТЕ (нужен только `docker`):
+
+```sh
+scripts/devbox.sh up               # провижн своего devbox из .devcontainer/ (идемпотентно)
+scripts/devbox-session.sh <scope>  # вход агентом: ставит OMNIFIELD_SCOPE + workdir + model-pin
+```
+
+`<scope>` — `main` (полный git) или `<zone>` (owner, commit-only под git-gate).
+Каталог продуктов/скоупов — `registry/products.md`. Всё дальнейшее (git, клон,
+`pnpm install` / `uv sync`, claude-сессии) — уже ВНУТРИ этого контейнера.
+
+> ⚠️ **`~/oa <repo> [scope]` — retired-антипаттерн, НЕ вход.** Это был хост-стопгап:
+> `docker exec` в ОДИН devbox (brainer'а) с bind-mount'ом СРАЗУ ВСЕХ репо → из
+> одной сессии видны чужие продукты, **утечка изоляции** (нарушает single-product-
+> per-devbox). Ретайрен в пользу пары выше. **Удали хост-алиас `~/oa`**, если он
+> остался на машине (действие на хосте, вне репо).
+
 ## Канон-раскладка
 
 Корень — `<root>\projects\new\` (на референс-машине `<root>` = `C:\Users\<user>\Desktop`,
