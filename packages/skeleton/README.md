@@ -91,6 +91,34 @@ DEVOPSER-108), а не имплицитом в `extends`-строке конфи
   (после install) → `packages/<name>` клона devopser; не резолвится (до install) — best-effort,
   жёсткий гейт живёт в CI `--check`, где зависимости стоят.
 
+## Версионирование пресетов + bump-дисциплина (DEVOPSER-100)
+
+**`template.json.presets` = ЕДИНЫЙ источник версий пресетов.** Consumer-деп (`@omnifield/*` в
+`package.json` потребителя) **дерайвится из биндинга**, а НЕ хардкодится: `package-template.json`
+несёт ключи пресет-деп с плейсхолдером `__PRESET_VERSION__`, `init.mjs` подставляет ранг из
+биндинга на материализации.
+
+**Propagation через drift-гейт, не пассивный caret.** `@omnifield/*` preset-деп потребителя —
+managed (`pins`-режим `package.json`): его ранг сверяется с биндингом. Bump биндинга →
+у потребителя `--check` **краснеет** (`@omnifield/nx-preset: ^0.1.1 → ^0.1.2`) → чинится `init`'ом.
+Локальные протоколы (`workspace:*`/`link:`/`file:`) НЕ трогаются — монорепо devopser сам линкует
+пресеты воркспейсом, это не версионный пин.
+
+**Version-guard** (расширение K2 за пределы skeleton): если УСТАНОВЛЕННАЯ версия пресета
+(`node_modules/@omnifield/X-preset`) **ниже** биндинга — `init`/`--check` печатают warn
+(`[skeleton preset-version] … установлено 0.1.0 < биндинг ^0.1.1 — обнови`). Best-effort (только
+когда пресет реально установлен); жёсткий гейт расхождения ранга — drift-check выше.
+
+**Bump-дисциплина (один edit-point).** Поднять версию пресета =
+1. `version` в `packages/<preset>/package.json` (эталон);
+2. ранг в `packages/skeleton/template.json` → `presets` (единый реестр).
+
+Оба — в одном PR (иначе биндинг разъедется с публикуемой версией). Публикация — существующим
+`pnpm -r publish` (release-workflow, GitHub Packages `npm.pkg.github.com`); версия = `package.json`
+пресета, бамп **ручной**, zero-dep (без changeset/nx release). Потребители подтягиваются сами:
+их `--check` краснеет на новом ранге → `init` синкает. Расширение publish-механизма (release.yml)
+— контракт вне зоны skeleton → к architect.
+
 ## Стек репо (node / go / frontend)
 
 `init.mjs` ветвится по стеку, не по имени продукта. Стек — из

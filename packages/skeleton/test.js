@@ -8,7 +8,15 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -287,6 +295,96 @@ test("mode block/pins дрейфят в --check (managed-часть enforced, к
     assert.equal(c.status, 1, "block+pins дрейф → exit 1");
     assert.match(c.stderr, /\.gitignore/, "block-дрейф в отчёте");
     assert.match(c.stderr, /package\.json пины/, "pins-дрейф в отчёте");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- Версионирование пресетов (DEVOPSER-100): единый источник версий -----------
+
+// Range из биндинга по имени пакета ("@omnifield/nx-preset@^0.1.1" → "^0.1.1").
+const bindingRange = (pkgName) => {
+  const ref = Object.values(TEMPLATE.presets).find(
+    (r) => typeof r === "string" && r.startsWith(`${pkgName}@`),
+  );
+  return ref.slice(ref.lastIndexOf("@") + 1);
+};
+
+test("package-template.json НЕ хардкодит @omnifield ранги (единый источник = биндинг)", () => {
+  const tpl = JSON.parse(readFileSync(join(PKG_DIR, "files/package-template.json"), "utf8"));
+  for (const [key, range] of Object.entries(tpl.devDependencies ?? {})) {
+    if (key.startsWith("@omnifield/"))
+      assert.doesNotMatch(range, /\d+\.\d+\.\d+/, `${key}: ранг не должен быть хардкод-семвером`);
+  }
+});
+
+test("consumer preset-деп дерайвится из биндинга (fresh init → range биндинга, не ^0.1.0)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0); // node-стек → создаётся package.json
+    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    assert.equal(pkg.devDependencies["@omnifield/nx-preset"], bindingRange("@omnifield/nx-preset"));
+    assert.equal(
+      pkg.devDependencies["@omnifield/biome-preset"],
+      bindingRange("@omnifield/biome-preset"),
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("биндинг ≠ потребитель → drift-fail; init синкает (propagation через drift-гейт)", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    // Симулируем отставшего потребителя: сбить ранг ниже биндинга.
+    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    pkg.devDependencies["@omnifield/nx-preset"] = "^0.1.0";
+    writeFileSync(join(repo, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "ранг ≠ биндинг → exit 1");
+    assert.match(c.stderr, /@omnifield\/nx-preset/, "drift называет preset-деп");
+    // init синкает обратно к биндингу.
+    assert.equal(run(repo).status, 0);
+    const fixed = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    assert.equal(
+      fixed.devDependencies["@omnifield/nx-preset"],
+      bindingRange("@omnifield/nx-preset"),
+    );
+    assert.equal(run(repo, "--check").status, 0, "после синка --check чист");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("локальный протокол (workspace:*) НЕ дрейфит (монорепо/линк не версионный пин)", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    pkg.devDependencies["@omnifield/nx-preset"] = "workspace:*";
+    writeFileSync(join(repo, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, "workspace:* не должен считаться дрейфом");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("version-guard: warn, если УСТАНОВЛЕННАЯ версия пресета ниже биндинга", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    // Фейковый node_modules с версией ниже биндинга (^0.1.1 → min 0.1.1).
+    const nm = join(repo, "node_modules/@omnifield/nx-preset");
+    mkdirSync(nm, { recursive: true });
+    writeFileSync(
+      join(nm, "package.json"),
+      '{ "name": "@omnifield/nx-preset", "version": "0.1.0" }\n',
+    );
+    const c = run(repo, "--check");
+    assert.match(c.stderr, /preset-version/, "version-guard warn напечатан");
+    assert.match(c.stderr, /nx-preset/, "warn называет отставший пресет");
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
