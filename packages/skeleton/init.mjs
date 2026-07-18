@@ -216,7 +216,11 @@ function applyPins(e, { target, check, drift, actions, name }) {
   if (raw === null) {
     if (check) drift.push(`${e.dest}: отсутствует`);
     else {
-      writeLf(path, readEtalon(e.src).replace("__NAME__", name));
+      // Создаём из шаблона; ранги @omnifield preset-деп дерайвим из template.json.presets
+      // (единый источник версий, DEVOPSER-100) — шаблон их НЕ хардкодит (__PRESET_VERSION__).
+      const pkg = JSON.parse(readEtalon(e.src).replace("__NAME__", name));
+      setPresetDeps(pkg);
+      writeLf(path, `${JSON.stringify(pkg, null, 2)}\n`);
       actions.push(`${e.dest}: создан из шаблона`);
     }
     return;
@@ -226,11 +230,15 @@ function applyPins(e, { target, check, drift, actions, name }) {
   if (pkg.packageManager !== packageManager)
     bad.push(`packageManager: ${pkg.packageManager ?? "нет"} → ${packageManager}`);
   if (pkg.engines?.node !== node) bad.push(`engines.node: ${pkg.engines?.node ?? "нет"} → ${node}`);
+  // @omnifield preset-деп: ранг managed против биндинга (bump биндинга → потребитель краснеет
+  // на --check → синкает init'ом; propagation через drift-гейт, не пассивный caret).
+  for (const d of presetDepDrift(pkg)) bad.push(`${d.key}: ${d.from} → ${d.to}`);
   if (!bad.length) return;
   if (check) drift.push(`${e.dest} пины: ${bad.join("; ")}`);
   else {
     pkg.packageManager = packageManager;
     pkg.engines = { ...pkg.engines, node };
+    setPresetDeps(pkg);
     writeLf(path, `${JSON.stringify(pkg, null, 2)}\n`);
     actions.push(`${e.dest}: пины починены (${bad.join("; ")})`);
   }
@@ -314,6 +322,70 @@ function validatePresets(target, stacks) {
   return errors;
 }
 
+// --- Версионирование пресетов (DEVOPSER-100) ---------------------------------
+// template.json.presets = ЕДИНЫЙ источник версий пресетов. Consumer preset-деп (@omnifield/*)
+// дерайвится из биндинга (не хардкодится в package-template.json) и managed drift-гейтом:
+// bump биндинга → потребитель краснеет на --check → синкает init'ом. Version-guard (warn)
+// ловит отставание УСТАНОВЛЕННОЙ версии. Zero-dep, без changeset.
+
+// pkgName → range из биндинга (реестр версий пресетов).
+function presetRanges() {
+  const out = {};
+  for (const [slot, ref] of Object.entries(TEMPLATE.presets ?? {})) {
+    if (slot.startsWith("$")) continue;
+    const { pkg, range } = parsePresetRef(ref);
+    if (range) out[pkg] = range;
+  }
+  return out;
+}
+
+// Локальный протокол (монорепо/линк) — НЕ версионный пин, не трогаем (devopser сам = workspace:*).
+const LOCAL_DEP = /^(?:workspace|link|file|catalog|portal):/;
+
+// Расхождения preset-деп потребителя vs биндинг: [{key,from,to}]. Только семвер-ранги.
+function presetDepDrift(pkg) {
+  const ranges = presetRanges();
+  const bad = [];
+  for (const bucket of ["dependencies", "devDependencies"]) {
+    for (const [key, cur] of Object.entries(pkg[bucket] ?? {}))
+      if (ranges[key] && !LOCAL_DEP.test(cur) && cur !== ranges[key])
+        bad.push({ key, from: cur, to: ranges[key] });
+  }
+  return bad;
+}
+
+// Проставить preset-деп ранги из биндинга (init-фикс/сид). Локальные протоколы не трогаем.
+function setPresetDeps(pkg) {
+  const ranges = presetRanges();
+  for (const bucket of ["dependencies", "devDependencies"]) {
+    const deps = pkg[bucket];
+    for (const key of Object.keys(deps ?? {}))
+      if (ranges[key] && !LOCAL_DEP.test(deps[key])) deps[key] = ranges[key];
+  }
+}
+
+// Мин-версия из ранга "^0.1.1" → [0,1,1]; cmp по major/minor/patch.
+const minVer = (r) => {
+  const m = String(r).match(/(\d+)\.(\d+)\.(\d+)/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+};
+const cmpVer = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+
+// Version-guard за пределы skeleton (K2): warn, если УСТАНОВЛЕННАЯ версия пресета (node_modules)
+// ниже биндинга. Best-effort — только когда пресет реально установлен.
+function warnStalePresets(target) {
+  for (const [pkg, range] of Object.entries(presetRanges())) {
+    const p = join(target, "node_modules", pkg, "package.json");
+    if (!existsSync(p)) continue;
+    const inst = minVer(JSON.parse(readFileSync(p, "utf8")).version);
+    const want = minVer(range);
+    if (inst && want && cmpVer(inst, want) < 0)
+      console.warn(
+        `[skeleton preset-version] ${pkg}: установлено ${inst.join(".")} < биндинг ${range} — обнови (pnpm install).`,
+      );
+  }
+}
+
 function main() {
   printVersion();
   const args = process.argv.slice(2);
@@ -355,6 +427,10 @@ function main() {
       actions.push(".github/workflows/pr-title.yml: создан (caller)");
     }
   }
+
+  // Version-guard (DEVOPSER-100): warn при отставании УСТАНОВЛЕННОЙ версии пресета от биндинга
+  // (в обоих режимах, best-effort — не гейт, дрейф ловит preset-деп package.json).
+  warnStalePresets(target);
 
   // 6. Пресет-контракт (DEVOPSER-98): каждый bound-пресет живёт ВНУТРИ рамки. Hard-гейт в
   //    ОБОИХ режимах (init после материализации / --check по факту репо) — loud-fail, не дрейф.

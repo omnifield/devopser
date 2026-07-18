@@ -19,8 +19,8 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
     "@nx/js": "^23.0.1",
-    "@omnifield/biome-preset": "^0.1.0",
-    "@omnifield/nx-preset": "^0.1.0",
+    "@omnifield/biome-preset": "__PRESET_VERSION__",
+    "@omnifield/nx-preset": "__PRESET_VERSION__",
     "husky": "^9.1.7",
     "nx": "^23.0.1",
     "sherif": "^1.13.0",
