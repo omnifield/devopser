@@ -23,11 +23,11 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   buildRulesetSpec,
+  ciJobNames,
   diffRulesets,
   dispatch,
   mergeFlag,
   resolvePreset,
-  stackChecks,
   validateBranchName,
   validateCommitMessage,
 } from "./files/git-flow.mjs";
@@ -678,10 +678,21 @@ test("git-flow: агент-agnostic — в инструменте ноль actor
 
 // --- Rulesets-материализация (DEVOPSER-110): git-пресет → GitHub-rulesets ------
 
-test("git-flow rulesets: stackChecks зеркалит CI-callers (go→go, node→node, frontend→web)", () => {
-  assert.deepEqual(stackChecks(["node"]), ["node"]);
-  assert.deepEqual(stackChecks(["go", "frontend"]), ["go", "web"]);
-  assert.deepEqual(stackChecks(["node", "frontend"]), ["node", "web"]);
+test("git-flow rulesets: required-checks из ПОТРЕБИТЕЛЬСКОГО ci.yml (go+web → оба, DEVOPSER-114 #1)", () => {
+  const repo = mkRepo();
+  try {
+    // go+frontend-репо: ci.yml несёт джобы go + web (как раскатывает init). Без platform/repo-flow.json.
+    mkdirSync(join(repo, ".github/workflows"), { recursive: true });
+    writeFileSync(
+      join(repo, ".github/workflows/ci.yml"),
+      "name: CI\non:\n  pull_request:\njobs:\n  go:\n    uses: x/go-ci.yml@main\n  web:\n    uses: x/web-ci.yml@main\n    with:\n      working-directory: web\n",
+    );
+    assert.deepEqual(ciJobNames(repo), ["go", "web"], "required = actual CI-джобы, не только go");
+    // репо без ci.yml → нет required-checks (нельзя требовать несуществующее).
+    assert.deepEqual(ciJobNames(join(repo, "nope")), []);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 test("git-flow rulesets: buildRulesetSpec из frame+defaults (mainProtected/prRequired/checks)", () => {
@@ -731,7 +742,10 @@ test("git-flow rulesets (check): нет ruleset → loud-fail (дрейф про
 test("git-flow rulesets (check): ruleset совпал с пресетом → чисто (no throw)", async () => {
   const repo = mkRepo();
   try {
-    const desired = buildRulesetSpec(GIT_PRESET, stackChecks(["node"]));
+    // ci.yml потребителя → required-checks [node]; desired строится из тех же.
+    mkdirSync(join(repo, ".github/workflows"), { recursive: true });
+    writeFileSync(join(repo, ".github/workflows/ci.yml"), "jobs:\n  node:\n    uses: x@main\n");
+    const desired = buildRulesetSpec(GIT_PRESET, ciJobNames(repo));
     const ex = mockExec({
       "git rev-parse --show-toplevel": { code: 0, out: `${repo}\n`, err: "" },
       "gh repo view": { code: 0, out: "o/r\n", err: "" },
@@ -775,6 +789,27 @@ test("git-flow rulesets --apply: идемпотентно (нет → POST; ес
     assert.ok(
       put.calls.gh.some((c) => c.startsWith("api repos/o/r/rulesets/7 --method PUT")),
       "есть ruleset → PUT (идемпотентно)",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("git-flow: ошибка gh прокидывает stderr наружу, не 'code 1' (DEVOPSER-114 #3)", async () => {
+  const repo = mkRepo();
+  try {
+    const ex = mockExec({
+      "git rev-parse --show-toplevel": { code: 0, out: `${repo}\n`, err: "" },
+      "gh repo view": {
+        code: 1,
+        out: "",
+        err: "gh: HTTP 403: Resource not accessible (admin scope)",
+      },
+    });
+    await assert.rejects(
+      dispatch(["rulesets"], ex, GIT_PRESET, {}),
+      /403/,
+      "реальный stderr виден",
     );
   } finally {
     rmSync(repo, { recursive: true, force: true });
