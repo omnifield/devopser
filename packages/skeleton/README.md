@@ -152,12 +152,14 @@ Zero-dep — шелл `git`+`gh`.
 ### `rulesets` — enforcement из пресета (DEVOPSER-110)
 
 Единый источник enforcement = git-пресет (замещает ручные GitHub-rulesets — второй источник правды).
-Читает пресет + стек репо → desired ruleset-спека:
+Читает пресет + `.github/workflows/ci.yml` репо → desired ruleset-спека:
 
 - `frame.mainProtected` → защита ветки по умолчанию (правила `deletion` + `non_fast_forward`);
 - `frame.prRequired` → правило `pull_request` (мерж только через PR);
-- `defaults.requiredChecks: "from-stack"` → `required_status_checks` с контекстами из стека
-  (те же имена job'ов, что раздаёт CI-caller: `go`/`node`/`web` — зеркалит `template.json.ci.jobs`).
+- `defaults.requiredChecks: "from-stack"` → `required_status_checks` с контекстами = **именами
+  job'ов из `ci.yml` ПОТРЕБИТЕЛЯ** (actual CI = что реально прогоняется). Резолв из ci.yml, НЕ из
+  devopser-реестра (`platform/repo-flow.json` в потребителе нет; DEVOPSER-114 #1: go+web-репо
+  получает оба required-check'а, не только go). Нет `ci.yml` → нет required-checks.
 
 **`rulesets`** (дефолт) — check: текущие GitHub-rulesets vs desired → **loud-fail при дрейфе**
 (гейт против ручного расхождения). **`rulesets --apply`** — идемпотентный apply через
