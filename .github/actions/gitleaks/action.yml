@@ -1,0 +1,21 @@
+# Composite action: секрет-скан gitleaks по ВСЕЙ git-истории от КОРНЯ репо (репо публичные —
+# токены в вечной истории ловит CI, не глаза). --redact → находки не светятся в логах.
+#
+# ЕДИНАЯ точка пина версии (DEVOPSER-53): до этого версия была захардкожена curl-download'ом
+# в 3 reusable-воркфлоу (web/node/go), дважды на файл = 6× — бамп требовал 6 правок, а dependabot
+# (npm + github-actions) curl-URL НЕ видит. Здесь версия живёт в ОДНОМ месте (GITLEAKS_VERSION);
+# бампим через architect — как прочие tool-пины (golangci-lint / sqlc / goose, см. go-ci.yml).
+# Поведение секрет-скана СОХРАНЕНО один-в-один (detect --source . --redact --no-banner).
+name: secret-scan (gitleaks)
+description: gitleaks detect по всей git-истории от корня репо; версия — единая точка пина (бамп через architect)
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GITLEAKS_VERSION: "8.30.1"
+      run: |
+        curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+          | tar -xz -C /tmp gitleaks
+        /tmp/gitleaks detect --source . --redact --no-banner
