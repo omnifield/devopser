@@ -706,6 +706,18 @@ test("git-flow rulesets: buildRulesetSpec из frame+defaults (mainProtected/prR
     "mainProtected → защита",
   );
   assert.ok(types.includes("pull_request"), "prRequired → require-PR");
+  // ПОЛНЫЙ набор pull_request-параметров (GitHub Rulesets API иначе 422; DEVOPSER-116):
+  // count + 4 булевых (дефолты сохраняют смысл prRequired — мерж через PR, без обяз. ревью).
+  const pr = spec.rules.find((r) => r.type === "pull_request").parameters;
+  assert.equal(pr.required_approving_review_count, 0);
+  for (const k of [
+    "dismiss_stale_reviews_on_push",
+    "require_code_owner_review",
+    "require_last_push_approval",
+    "required_review_thread_resolution",
+  ]) {
+    assert.strictEqual(pr[k], false, `pull_request.${k} = false`);
+  }
   const rsc = spec.rules.find((r) => r.type === "required_status_checks");
   assert.deepEqual(
     rsc.parameters.required_status_checks.map((c) => c.context),
