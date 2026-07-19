@@ -21,6 +21,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  dispatch,
+  mergeFlag,
+  resolvePreset,
+  validateBranchName,
+  validateCommitMessage,
+} from "./files/git-flow.mjs";
 
 const PKG_DIR = dirname(fileURLToPath(import.meta.url));
 const INIT = join(PKG_DIR, "init.mjs");
@@ -521,5 +528,118 @@ test("mechanism-enum: read валиден; unknown mechanism → loud-fail", () 
     assert.match(c.stderr, /mechanism 'bogus-mech'/, "loud-fail называет неизвестный mechanism");
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- git-инструмент git-flow.mjs (DEVOPSER-106): agent-agnostic, по пресету -----
+
+const GIT_PRESET = resolvePreset(); // реальный @omnifield/git-preset (sibling монорепо)
+
+// Мок-executor: пишет вызовы, отдаёт канон-ответы по префиксу команды (без реального git/gh).
+function mockExec(responses = {}) {
+  const calls = { git: [], gh: [], log: [] };
+  const respond = (bin, args) => {
+    const key = `${bin} ${args.join(" ")}`;
+    for (const [pat, val] of Object.entries(responses)) if (key.startsWith(pat)) return val;
+    return { code: 0, out: "", err: "" };
+  };
+  return {
+    calls,
+    git: (a) => {
+      calls.git.push(a.join(" "));
+      return respond("git", a);
+    },
+    gh: (a) => {
+      calls.gh.push(a.join(" "));
+      return respond("gh", a);
+    },
+    log: (m) => calls.log.push(m),
+  };
+}
+
+test("git-flow: пресет резолвится (frame frozen + defaults overridable)", () => {
+  assert.equal(GIT_PRESET.frame.mainProtected, true);
+  assert.equal(GIT_PRESET.frame.prRequired, true);
+  assert.equal(typeof GIT_PRESET.defaults.merge, "string");
+  assert.equal(typeof GIT_PRESET.defaults.branchNaming, "string");
+});
+
+test("git-flow: validateBranchName по defaults.branchNaming (valid ok, invalid → throw)", () => {
+  const p = GIT_PRESET.defaults.branchNaming;
+  assert.equal(validateBranchName("feat/my-slug", p), "feat/my-slug");
+  assert.throws(() => validateBranchName("random-branch", p), /branchNaming/);
+  assert.throws(() => validateBranchName("feat/BadCaps", p), /branchNaming/);
+});
+
+test("git-flow: validateCommitMessage по commitConvention (conventional)", () => {
+  const c = GIT_PRESET.defaults.commitConvention;
+  assert.equal(validateCommitMessage("feat: добавил X", c), "feat: добавил X");
+  assert.equal(validateCommitMessage("fix(skeleton): Y", c), "fix(skeleton): Y");
+  assert.throws(() => validateCommitMessage("просто сообщение", c), /conventional/);
+});
+
+test("git-flow: mergeFlag маппит defaults.merge; неизвестный → throw", () => {
+  assert.equal(mergeFlag("squash"), "--squash");
+  assert.equal(mergeFlag("merge"), "--merge");
+  assert.equal(mergeFlag("rebase"), "--rebase");
+  assert.throws(() => mergeFlag("fast-forward"), /merge неизвестен/);
+});
+
+test("git-flow: frame.mainProtected блокит прямой коммит в main", async () => {
+  const ex = mockExec({ "git rev-parse --abbrev-ref HEAD": { code: 0, out: "main\n", err: "" } });
+  await assert.rejects(
+    dispatch(["commit", "feat: прямой в main"], ex, GIT_PRESET, {}),
+    /mainProtected/,
+    "commit на main при mainProtected → throw",
+  );
+  assert.ok(!ex.calls.git.some((c) => c.startsWith("commit")), "коммит НЕ выполнен");
+});
+
+test("git-flow: land-оркестрация по пресету (PR OPEN + checks зелёные → merge+delete → sync)", async () => {
+  const ex = mockExec({
+    "git rev-parse --abbrev-ref HEAD": { code: 0, out: "feat/x\n", err: "" },
+    "gh pr view": { code: 0, out: "OPEN\n", err: "" },
+    "gh pr checks": { code: 0, out: "", err: "" },
+  });
+  await dispatch(["land"], ex, GIT_PRESET, {});
+  // merge-флаг из пресета (squash), + удаление ветки.
+  const flag = mergeFlag(GIT_PRESET.defaults.merge);
+  assert.ok(
+    ex.calls.gh.some((c) => c === `pr merge ${flag} --delete-branch`),
+    "gh pr merge по пресету + delete-branch",
+  );
+  assert.ok(ex.calls.git.includes("reset --hard origin/main"), "sync: local main = origin/main");
+});
+
+test("git-flow: land требует OPEN PR (frame.prRequired) — нет PR → throw", async () => {
+  const ex = mockExec({
+    "git rev-parse --abbrev-ref HEAD": { code: 0, out: "feat/x\n", err: "" },
+    "gh pr view": { code: 1, out: "", err: "no pull requests found" },
+  });
+  await assert.rejects(dispatch(["land"], ex, GIT_PRESET, {}), /prRequired/);
+  assert.ok(!ex.calls.gh.some((c) => c.startsWith("pr merge")), "merge НЕ вызван без PR");
+});
+
+test("git-flow: --dry-run печатает мутации, git/gh НЕ выполняет", async () => {
+  const ex = mockExec();
+  await dispatch(["start", "feat/foo"], ex, GIT_PRESET, { dry: true });
+  assert.equal(ex.calls.git.length, 0, "dry-run: ноль реальных git-вызовов");
+  assert.ok(
+    ex.calls.log.some((l) => l.includes("[dry-run] git checkout -b feat/foo origin/main")),
+    "печатает намеренную мутацию (ветка от origin/main)",
+  );
+});
+
+test("git-flow: агент-agnostic — в инструменте ноль actor/owner/ролей/gate", () => {
+  const src = readFileSync(join(PKG_DIR, "files/git-flow.mjs"), "utf8");
+  // Комментарии-доки легитимно называют «agent-agnostic»/«owner/ролей» в дисклеймере —
+  // проверяем, что нет КОДА про actor: идентификаторов роли/владельца/гейта.
+  for (const forbidden of [/\browner\b/i, /\brole\b/i, /\bgit-gate\b/i, /\bpermission\b/i]) {
+    // разрешаем в строках-комментариях disclaimer'а: проверяем именно объявления/обращения.
+    const codeLines = src
+      .split("\n")
+      .filter((l) => !l.trimStart().startsWith("//"))
+      .join("\n");
+    assert.doesNotMatch(codeLines, forbidden, `код git-flow.mjs не про ${forbidden}`);
   }
 });

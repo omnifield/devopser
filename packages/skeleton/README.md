@@ -124,6 +124,25 @@ git-flow: git-flow`).
 Пресет-контракт (метаданные + биндинг + валидация «в рамке» + версии) — **общий**, поэтому
 git-flow ложится на тот же механизм, что repo-config (композиция DEVOPSER-108).
 
+## git-инструмент (`scripts/git-flow.mjs`, DEVOPSER-106)
+
+Managed-скрипт (mode `exact`, вендорится+drift как `devbox-*`), который **ЧИТАЕТ** git-пресет
+(`@omnifield/git-preset`) и делает полный луп git без ручных команд. Zero-dep — шелл `git`+`gh`.
+Все политики — из пресета; хардкода флоу нет.
+
+| Субкоманда | Что | Из пресета |
+|---|---|---|
+| `start <type>/<slug>` | ветка ОТ `origin/main` (свежий `fetch` — не от грязного local, урок PR#26) | `defaults.branchNaming` (валидация имени) |
+| `commit <msg>` | коммит | `defaults.commitConvention` (валидация) · `frame.mainProtected` (блок коммита в main) |
+| `push` | push ветки в origin | `frame.mainProtected` |
+| `pr [--title --body]` | открыть PR (`gh`, `--base main`) | — |
+| `land` | зелёные checks → merge → удалить ветку → sync main | `frame.prRequired` (нужен OPEN PR) · `defaults.requiredChecks` · `defaults.merge` |
+| `sync` | локальный `main` = `origin/main` | — |
+
+`--dry-run` печатает намеренные мутации (`git`/`gh` write), не выполняя. **agent-agnostic:**
+инструмент про «кого» НЕ знает — ноль owner/ролей/прав/gate; кто вызывает = концерн потребителя.
+Это ИНСТРУМЕНТ (скриптованные операции); rulesets-материализация — отдельный слайс.
+
 ## Версионирование пресетов + bump-дисциплина (DEVOPSER-100)
 
 **`template.json.presets` = ЕДИНЫЙ источник версий пресетов.** Consumer-деп (`@omnifield/*` в
@@ -192,7 +211,7 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 | Файл | Режим |
 |---|---|
 | `.editorconfig` · `.gitattributes` · `.npmrc` · `.husky/pre-commit` · `.husky/pre-push` | точная копия эталона |
-| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/devbox-manifest.mjs` · `scripts/devbox-publish.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже) |
+| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/devbox-manifest.mjs` · `scripts/devbox-publish.mjs` · `scripts/git-flow.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже; `git-flow.mjs` — git-инструмент, DEVOPSER-106) |
 | `.gitignore` | managed-блок между маркерами `>>> omnifield-skeleton` — ниже блока репо дописывает своё |
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
