@@ -10,7 +10,7 @@
 #   golangci-lint — v2.1.6  (schema v2; конфиг .golangci.yml лежит у потребителя;
 #                            install-mode: goinstall — сборка тулчейном репо, см. шаг ниже)
 #   sqlc          — v1.31.1  (ставится go install только когда у потребителя есть sqlc.yaml)
-#   gitleaks      — v8.30.1  (тот же пин, что node-ci — секрет-скан общий)
+#   gitleaks      — пин в composite .github/actions/gitleaks (единая точка, DEVOPSER-53)
 #   goose         — v3.24.0  (канон-инструмент миграций; в CI не гоняется, пин для продуктов)
 #
 # permissions задаёт CALLER — reusable не может расширить права сам: минимум contents: read
@@ -42,14 +42,11 @@ jobs:
         with:
           # gitleaks сканит всю историю → полная глубина.
           fetch-depth: 0
-      # Репо публичные: секреты в вечной истории ловит CI, не глаза. --redact —
-      # находки не светятся в логах. Версия запинена (канон toolchain-pins).
+      # Репо публичные: секреты в вечной истории ловит CI, не глаза. --redact — находки не светятся
+      # в логах. Версия — единая точка пина в composite (DEVOPSER-53), не хардкод здесь.
       - name: secret-scan (gitleaks)
         if: ${{ inputs.secret-scan }}
-        run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
-            | tar -xz -C /tmp gitleaks
-          /tmp/gitleaks detect --source . --redact --no-banner
+        uses: omnifield/devopser/.github/actions/gitleaks@main
       # Версия Go — из пина вызывателя (go.mod), не отсюда. check-latest: false —
       # берём ровно запинённую, не подтягиваем свежак молча.
       - uses: actions/setup-go@v6

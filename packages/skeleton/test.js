@@ -118,6 +118,119 @@ test("init (go-стек): go-templates из манифеста созданы, g
   }
 });
 
+// --- DEVOPSER-44/45: devcontainer IDE-канон + стек-чистота (ноль node-утечек в go) --------
+
+const REPO_ROOT = join(PKG_DIR, "..", "..");
+const readDevcontainer = (repo) =>
+  JSON.parse(readFileSync(join(repo, ".devcontainer/devcontainer.json"), "utf8"));
+
+test("devcontainer несёт IDE-канон customizations.vscode (biome-форматтер, formatOnSave) — DEVOPSER-44", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    const vs = readDevcontainer(repo).customizations?.vscode;
+    assert.ok(vs, "customizations.vscode присутствует");
+    assert.ok(vs.extensions.includes("biomejs.biome"), "biome-расширение в extensions");
+    assert.equal(vs.settings["editor.formatOnSave"], true, "formatOnSave включён");
+    assert.equal(vs.settings["[typescript]"]["editor.defaultFormatter"], "biomejs.biome");
+    assert.equal(vs.settings["typescript.tsdk"], "node_modules/typescript/lib");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("node-devcontainer: postCreate несёт npm-whoami-гейт + pnpm install; .husky создан (без регрессий)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0); // пустой → node
+    const dc = readDevcontainer(repo);
+    assert.match(dc.postCreateCommand, /npm whoami/, "node: npm-whoami-гейт присутствует");
+    assert.match(dc.postCreateCommand, /pnpm install/, "node: pnpm install присутствует");
+    assert.ok(existsSync(join(repo, ".husky/pre-commit")), "node: .husky/pre-commit создан");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("go-only devcontainer: НОЛЬ node-утечек (нет npm-whoami/pnpm), .husky не создан — DEVOPSER-45", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "go.mod"), "module x\n"); // → go-only
+    assert.equal(run(repo).status, 0);
+    const dc = readDevcontainer(repo);
+    assert.doesNotMatch(dc.postCreateCommand, /npm whoami/, "go: без npm-whoami-гейта");
+    // pnpm/store-mount (chown) — общая инфра, ок; утечка = pnpm install (node-тулинг).
+    assert.doesNotMatch(dc.postCreateCommand, /pnpm install/, "go: без pnpm install");
+    assert.doesNotMatch(dc.postCreateCommand, /pnpm -C/, "go: без pnpm -C воркдир-инсталла");
+    assert.ok(!existsSync(join(repo, ".husky/pre-commit")), "go: .husky/pre-commit НЕ создан (nx-хуки node-only)");
+    assert.ok(!existsSync(join(repo, ".husky/pre-push")), "go: .husky/pre-push НЕ создан");
+    // Стек-чистый шаблон — валидный drift-check (нет husky-дрейфа на go).
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, c.stdout + c.stderr);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("frontend-devcontainer: pnpm-воркдир из repo-flow (не хардкод), npm-whoami есть, husky нет — DEVOPSER-45", () => {
+  const base = mkRepo();
+  const repo = join(base, "chater"); // basename → repo-flow.json[chater] = go+frontend, workdir web
+  mkdirSync(repo, { recursive: true });
+  try {
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /стек: \[go, frontend\]/, "repo-flow дал go+frontend");
+    const dc = readDevcontainer(repo);
+    assert.match(dc.postCreateCommand, /pnpm -C web install/, "frontend: pnpm-воркдир из repo-flow (web)");
+    assert.match(dc.postCreateCommand, /npm whoami/, "frontend: npm-whoami-гейт (тянет @omnifield-пресеты)");
+    assert.ok(!existsSync(join(repo, ".husky/pre-commit")), "go+frontend: husky нет (node-only)");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// --- DEVOPSER-53: gitleaks — единая точка пина, composite вместо 6× inline-curl ------------
+
+const CI_WORKFLOWS = ["web-ci.yml", "node-ci.yml", "go-ci.yml"];
+
+test("gitleaks: 3 reusable-воркфлоу зовут composite (ноль inline-curl-пина) — DEVOPSER-53", () => {
+  for (const wf of CI_WORKFLOWS) {
+    const src = readFileSync(join(REPO_ROOT, ".github/workflows", wf), "utf8");
+    assert.match(
+      src,
+      /uses:\s*omnifield\/devopser\/\.github\/actions\/gitleaks@main/,
+      `${wf} зовёт composite gitleaks`,
+    );
+    assert.doesNotMatch(src, /releases\/download\/v8\.30\.1/, `${wf} без inline-пина версии gitleaks`);
+  }
+});
+
+test("gitleaks composite: версия запинена ровно 1× + поведение секрет-скана сохранено — DEVOPSER-53", () => {
+  const src = readFileSync(join(REPO_ROOT, ".github/actions/gitleaks/action.yml"), "utf8");
+  assert.equal((src.match(/8\.30\.1/g) ?? []).length, 1, "версия gitleaks — ЕДИНАЯ точка пина");
+  assert.match(
+    src,
+    /gitleaks detect --source \. --redact --no-banner/,
+    "поведение секрет-скана (от корня, --redact) сохранено",
+  );
+});
+
+// --- DEVOPSER-54: web/frontend-caller требует packages:read (README = реальность) ---------
+
+test("frontend-caller ci.yml: permissions включают packages:read, но НЕ actions (README:221) — DEVOPSER-54", () => {
+  const base = mkRepo();
+  const repo = join(base, "chater"); // go+frontend (без node) → contents+packages, без actions
+  mkdirSync(repo, { recursive: true });
+  try {
+    assert.equal(run(repo).status, 0);
+    const ci = readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8");
+    assert.match(ci, /packages: read/, "frontend-caller несёт packages:read (тянет @omnifield-пресеты)");
+    assert.doesNotMatch(ci, /actions: read/, "go+frontend без node → без actions:read");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 // --- drift-check исполняет рамку из манифеста ----------------------------------
 
 test("--check после init: чисто (exit 0)", () => {
