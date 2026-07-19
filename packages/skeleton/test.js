@@ -166,7 +166,12 @@ test("каждый пресет объявляет метаданные omnifiel
 test("template.json биндит слот → @omnifield/X-preset@^ver; slot совпал с метаданными пресета", () => {
   const presets = TEMPLATE.presets;
   assert.ok(presets, "template.json должен нести биндинг presets");
-  const slotToLocal = { nx: "nx-preset", biome: "biome-preset", vite: "vite-preset" };
+  const slotToLocal = {
+    nx: "nx-preset",
+    biome: "biome-preset",
+    vite: "vite-preset",
+    "git-flow": "git-preset",
+  };
   for (const [slot, ref] of Object.entries(presets)) {
     if (slot.startsWith("$")) continue;
     // форма name@version (scoped: версия после последнего @).
@@ -398,12 +403,12 @@ test("каждый пресет объявляет target = repo-config", () => 
   }
 });
 
-test("template.json таксономия: repo-config active, release/git-flow declared (plug-in точки)", () => {
+test("template.json таксономия: repo-config active, release declared, git-flow bound", () => {
   const t = TEMPLATE.targets;
   assert.ok(t, "template.json должен нести таксономию targets");
   assert.equal(t["repo-config"], "active");
-  assert.equal(t.release, "declared");
-  assert.equal(t["git-flow"], "declared");
+  assert.equal(t.release, "declared"); // пустая plug-in точка
+  assert.equal(t["git-flow"], "bound"); // пресет привязан (DEVOPSER-103), процессор — следом
 });
 
 test("init репортит группировку по target (repo-config: nx,biome,vite; release/git-flow пусты)", () => {
@@ -437,6 +442,83 @@ test("пресет с unknown target → loud-fail (target вне таксоно
     const c = run(repo, "--check");
     assert.equal(c.status, 1, "unknown target → exit 1");
     assert.match(c.stderr, /target 'bogus-target'/, "loud-fail называет неизвестный target");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- git-flow пресет (DEVOPSER-103): первый не-repo-config таргет на движке -----
+
+test("git-preset объявляет omnifield: target git-flow, slot git-flow, stack any, mechanism read", () => {
+  const o = PRESET_PKG("git-preset").omnifield;
+  assert.equal(o.kind, "preset");
+  assert.equal(o.target, "git-flow");
+  assert.equal(o.slot, "git-flow");
+  assert.equal(o.stack, "any", "флоу не привязан к стеку");
+  assert.equal(o.mechanism, "read", "новый режим потребления (читается тулингом)");
+});
+
+test("git-flow.json: frame (frozen) {mainProtected,prRequired} + defaults (overridable)", () => {
+  const cfg = JSON.parse(readFileSync(join(PKG_DIR, "../git-preset/git-flow.json"), "utf8"));
+  assert.equal(cfg.frame.mainProtected, true);
+  assert.equal(cfg.frame.prRequired, true);
+  for (const k of ["merge", "branchNaming", "requiredChecks", "commitConvention"])
+    assert.ok(k in cfg.defaults, `defaults.${k} объявлен (overridable)`);
+  // agent-agnostic: ни один КЛЮЧ конфига не про actor/owner/роли/права ($comment-доки исключаем).
+  // Проверяем имена полей, не значения (regex-значение с "refactor" — легитимные данные).
+  const keys = [];
+  const walk = (o) => {
+    if (o && typeof o === "object")
+      for (const [k, v] of Object.entries(o)) {
+        if (k !== "$comment") keys.push(k.toLowerCase());
+        walk(v);
+      }
+  };
+  walk(cfg);
+  for (const forbidden of ["owner", "role", "actor", "push", "permission", "who"])
+    assert.ok(
+      !keys.some((k) => k.includes(forbidden)),
+      `ни один ключ конфига не про '${forbidden}' (agent-agnostic)`,
+    );
+});
+
+test("template.json биндит git-flow слот → @omnifield/git-preset; движок валидирует (в рамке)", () => {
+  assert.equal(TEMPLATE.presets["git-flow"], "@omnifield/git-preset@^0.1.0");
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, c.stderr); // git-пресет распознан, в рамке (stack:any) — не валит
+    assert.match(c.stdout, /git-flow: git-flow/, "git-flow target группирует свой пресет (bound)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("mechanism-enum: read валиден; unknown mechanism → loud-fail", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    // Фейк с валидным target, но mechanism вне enum.
+    const nm = join(repo, "node_modules/@omnifield/nx-preset");
+    mkdirSync(nm, { recursive: true });
+    writeFileSync(
+      join(nm, "package.json"),
+      `${JSON.stringify({
+        name: "@omnifield/nx-preset",
+        version: "0.1.1",
+        omnifield: {
+          kind: "preset",
+          slot: "nx",
+          stack: "node",
+          mechanism: "bogus-mech",
+          target: "repo-config",
+        },
+      })}\n`,
+    );
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "unknown mechanism → exit 1");
+    assert.match(c.stderr, /mechanism 'bogus-mech'/, "loud-fail называет неизвестный mechanism");
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

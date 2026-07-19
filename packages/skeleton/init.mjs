@@ -297,6 +297,10 @@ const stackInFrame = (presetStack, stacks) => {
 const knownTargets = () =>
   new Set(Object.keys(TEMPLATE.targets ?? {}).filter((t) => !t.startsWith("$")));
 
+// Enum mechanism (пресет-контракт -98): КАК пресет потребляется. extends (nx/biome) / import
+// (vite) / read (git-preset ЧИТАЕТСЯ тулингом — не extends/import; DEVOPSER-103). Расширяемо.
+const KNOWN_MECHANISMS = new Set(["extends", "import", "read"]);
+
 // «Пресет в рамке»: для каждого bound-пресета — (а) slot биндинга == slot, объявленный пресетом;
 // (б) если конфиг слота ПРИСУТСТВУЕТ в репо, declared stack пресета обязан быть в рамке стека
 // репо (node-пресет на go-репо = вне рамки → loud-fail). Возвращает список ошибок.
@@ -323,6 +327,11 @@ function validatePresets(target, stacks) {
     if (!targets.has(meta.target))
       errors.push(
         `биндинг '${slot}' → ${pkg}: target '${meta.target}' ∉ известные {${[...targets].join(", ")}}`,
+      );
+    // mechanism пресета — из enum контракта (DEVOPSER-103: + read). unknown → loud-fail.
+    if (meta.mechanism && !KNOWN_MECHANISMS.has(meta.mechanism))
+      errors.push(
+        `биндинг '${slot}' → ${pkg}: mechanism '${meta.mechanism}' ∉ {${[...KNOWN_MECHANISMS].join(", ")}}`,
       );
     const dest = slotDest[slot];
     if (dest && existsSync(join(target, dest)) && !stackInFrame(meta.stack, stacks))
