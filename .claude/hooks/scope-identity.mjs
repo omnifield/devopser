@@ -25,10 +25,10 @@ function architectBanner() {
   return [
     `# Session identity — OMNIFIELD_SCOPE=main (architect)`,
     ``,
-    `Ты в роли **architect/main** репо \`writer\`. Правила — \`CLAUDE.md\` + канон \`omnifield/commons/standards/\`.`,
+    `Ты в роли **architect/main** репо \`devopser\`. Правила — \`CLAUDE.md\` + канон \`omnifield/commons/standards/\`.`,
     ``,
     `- Триаж запросов user; арх-решения (ADR в оракуле → commons), контракты, координация.`,
-    `- **НЕ пиши код зон сам** (\`kernel/ engine/ backend/ frontend/\`) — брифы (\`briefs/\`) → owner-сессии (user запускает через \`claude-scope\`).`,
+    `- **НЕ пиши код зон сам** (\`packages/ registry/ workstation/ hub-core/\`) — брифы (\`briefs/\`) → owner-сессии (user запускает через \`claude-scope\`).`,
     `- Git: полный доступ (commit/push/merge) — marker \`.claude/.main-session-id\` даёт права.`,
     `- Owner-субагенты (Agent tool) и user-launched owner-сессии — под git-gate.`,
   ].join('\n');
