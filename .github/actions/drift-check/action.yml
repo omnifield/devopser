@@ -1,11 +1,19 @@
 # Composite action: сверка вендоренных skeleton-копий репо с эталоном devopser
 # (repo-skeleton D3). Эталон приезжает вместе с репо action'а при его резолве —
 # токены/checkout devopser'а не нужны (GITHUB_TOKEN caller'а devopser читать не может).
+#
+# Источник эталона (DEVOPSER-111): для devopser-SELF предпочитаем WORKSPACE-эталон
+# ($GITHUB_WORKSPACE/packages/skeleton), иначе PR, МЕНЯЮЩИЙ существующий managed-файл, даёт ложный
+# дрейф — @main-чекаут action'а ($GITHUB_ACTION_PATH) несёт init.mjs+эталон из main, а не из PR.
+# Потребитель packages/skeleton НЕ несёт → fallback на @main-эталон (поведение НЕ меняется).
 name: skeleton drift-check
 description: Сверка вендоренных skeleton-копий с эталоном devopser; красный при дрейфе, синк — явной командой init.mjs
 
 runs:
   using: composite
   steps:
-    - run: node "$GITHUB_ACTION_PATH/../../../packages/skeleton/init.mjs" --check .
+    - run: |
+        INIT="$GITHUB_WORKSPACE/packages/skeleton/init.mjs"
+        [ -f "$INIT" ] || INIT="$GITHUB_ACTION_PATH/../../../packages/skeleton/init.mjs"
+        node "$INIT" --check .
       shell: bash
