@@ -25,10 +25,12 @@ import {
   buildRulesetSpec,
   diffRulesets,
   dispatch,
+  expectsChecks,
   mergeFlag,
   resolvePreset,
   validateBranchName,
   validateCommitMessage,
+  waitChecks,
 } from "./files/git-flow.mjs";
 
 const PKG_DIR = dirname(fileURLToPath(import.meta.url));
@@ -584,6 +586,24 @@ function mockExec(responses = {}) {
       calls.gh.push(a.join(" "));
       return respond("gh", a);
     },
+    sleep: () => {}, // no-op в тестах: waitChecks-цикл не спит реальным spawnSync.
+    log: (m) => calls.log.push(m),
+  };
+}
+
+// Мок-exec для waitChecks: `gh pr checks` отдаёт по очереди из sequence (последний повторяется).
+function checksExec(sequence) {
+  const calls = { gh: [], log: [], sleep: 0 };
+  let i = 0;
+  return {
+    calls,
+    gh: (a) => {
+      calls.gh.push(a.join(" "));
+      return sequence[Math.min(i++, sequence.length - 1)];
+    },
+    sleep: () => {
+      calls.sleep++;
+    },
     log: (m) => calls.log.push(m),
   };
 }
@@ -649,6 +669,78 @@ test("git-flow: land требует OPEN PR (frame.prRequired) — нет PR →
   });
   await assert.rejects(dispatch(["land"], ex, GIT_PRESET, {}), /prRequired/);
   assert.ok(!ex.calls.gh.some((c) => c.startsWith("pr merge")), "merge НЕ вызван без PR");
+});
+
+// --- waitChecks: «no checks reported» vs реальный fail (DEVOPSER-115) ------------
+
+test("git-flow: expectsChecks — from-stack/непустой → true, пустой/прочее → false", () => {
+  assert.equal(expectsChecks("from-stack"), true);
+  assert.equal(expectsChecks(["ci / build"]), true);
+  assert.equal(expectsChecks([]), false);
+  assert.equal(expectsChecks(undefined), false);
+});
+
+const NO_CHECKS = { code: 1, out: "", err: "no checks reported on the 'feat/x' branch\n" };
+const GREEN = { code: 0, out: "", err: "" };
+const PENDING = { code: 8, out: "", err: "" };
+const FAILED = { code: 1, out: "build\tfail\thttps://…\n", err: "" };
+
+test("git-flow: waitChecks — «no checks reported» транзиент → ждёт → зелёные (НЕ падает)", () => {
+  // Догфуд-баг: land сразу после pr падал на «no checks reported». Теперь ждём регистрации.
+  const ex = checksExec([NO_CHECKS, NO_CHECKS, GREEN]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack"));
+  assert.equal(ex.calls.gh.length, 3, "две итерации ожидания регистрации, затем зелёные");
+  assert.equal(ex.calls.sleep, 2, "спал между итерациями (замокан no-op)");
+});
+
+test("git-flow: waitChecks — реальный fail (проверки есть, не зелёные, не маркер) → throw", () => {
+  const ex = checksExec([FAILED]);
+  assert.throws(() => waitChecks(ex, "from-stack"), /не зелёные/);
+});
+
+test("git-flow: waitChecks — pending (code 8) → ждёт → зелёные", () => {
+  const ex = checksExec([PENDING, PENDING, GREEN]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack"));
+  assert.equal(ex.calls.sleep, 2);
+});
+
+test("git-flow: waitChecks — «no checks» навсегда + пресет ЖДЁТ чеки → внятный throw за кап", () => {
+  const ex = checksExec([NO_CHECKS]); // маркер повторяется бесконечно
+  assert.throws(() => waitChecks(ex, "from-stack"), /не зарегистрировались за кап/);
+});
+
+test("git-flow: waitChecks — «no checks» навсегда + пресет чеков НЕ ждёт → успех (return)", () => {
+  const ex = checksExec([NO_CHECKS]);
+  assert.doesNotThrow(() => waitChecks(ex, [])); // пустой набор → «no checks» = ок
+});
+
+test("git-flow: land — «no checks reported» транзиент → дожидается → merge (регрессия -115)", async () => {
+  // Интеграция через dispatch(land): PR OPEN, checks сначала «no checks», затем зелёные → merge.
+  let n = 0;
+  const ex = {
+    calls: { git: [], gh: [], log: [] },
+    git: (a) => {
+      ex.calls.git.push(a.join(" "));
+      return a.join(" ").startsWith("rev-parse --abbrev-ref")
+        ? { code: 0, out: "feat/x\n", err: "" }
+        : { code: 0, out: "", err: "" };
+    },
+    gh: (a) => {
+      const s = a.join(" ");
+      ex.calls.gh.push(s);
+      if (s.startsWith("pr view")) return { code: 0, out: "OPEN\n", err: "" };
+      if (s === "pr checks") return n++ === 0 ? NO_CHECKS : GREEN;
+      return { code: 0, out: "", err: "" };
+    },
+    sleep: () => {},
+    log: (m) => ex.calls.log.push(m),
+  };
+  await dispatch(["land"], ex, GIT_PRESET, {});
+  const flag = mergeFlag(GIT_PRESET.defaults.merge);
+  assert.ok(
+    ex.calls.gh.some((c) => c === `pr merge ${flag} --delete-branch`),
+    "land НЕ упал на транзиентном «no checks» и дошёл до merge",
+  );
 });
 
 test("git-flow: --dry-run печатает мутации, git/gh НЕ выполняет", async () => {
