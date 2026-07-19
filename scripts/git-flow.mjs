@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // git-flow.mjs — agent-agnostic git-ИНСТРУМЕНТ (DEVOPSER-106). Managed-скрипт (как
-// devbox-services.mjs): вендорится в каждый репо, ЧИТАЕТ связанный git-пресет (@omnifield/git-preset,
-// DEVOPSER-103) и делает полный луп git без ручных команд. Zero-deps (node:* + шелл git/gh).
+// devbox-services.mjs): вендорится в каждый репо, ЧИТАЕТ ВЕНДОРЕННЫЙ git-flow.json (managed-файл,
+// DEVOPSER-113 — language-agnostic, любой стек, ноль npm) и делает полный луп git без ручных
+// команд. Zero-deps (node:* + шелл git/gh).
 //
 //   git-flow start <type>/<slug>   — ветка ОТ origin/main (свежий fetch; урок PR#26: не от грязного
 //                                    local); имя валидируется против defaults.branchNaming.
@@ -32,30 +33,25 @@ export function die(msg) {
   process.exit(1);
 }
 
-// --- Резолв git-пресета (как init.mjs resolvePresetMeta) ----------------------
-// Идём вверх от cwd И от расположения скрипта, на каждом уровне пробуя node_modules потребителя
-// (после install) → packages/git-preset монорепо (дев/dogfood). Робастно и для vendored scripts/,
-// и для эталона files/.
-const PRESET_REL = [
-  "node_modules/@omnifield/git-preset/git-flow.json",
-  "packages/git-preset/git-flow.json",
-];
+// --- Резолв git-flow пресета (DEVOPSER-113: вендоренный, language-agnostic) -----
+// Читаем ЛОКАЛЬНЫЙ вендоренный git-flow.json (managed-файл в корне репо — есть в ЛЮБОМ стеке,
+// ноль node_modules; go-primary/polyglot тоже). Идём вверх от cwd И от расположения скрипта
+// (робастно для vendored scripts/ и эталона files/). Fallback — legacy npm (@omnifield/git-preset
+// ретайрен, но для транзишна).
 export function resolvePreset(startDir = process.cwd()) {
   for (const base of [startDir, HERE]) {
     let dir = base;
     for (;;) {
-      for (const rel of PRESET_REL) {
-        const p = join(dir, rel);
-        if (existsSync(p)) return JSON.parse(readFileSync(p, "utf8"));
-      }
+      const p = join(dir, "git-flow.json");
+      if (existsSync(p)) return JSON.parse(readFileSync(p, "utf8"));
       const up = dirname(dir);
       if (up === dir) break;
       dir = up;
     }
   }
-  die(
-    "[git-flow] git-пресет не найден: @omnifield/git-preset (git-flow.json). Установлен ли пресет?",
-  );
+  const legacy = join(startDir, "node_modules/@omnifield/git-preset/git-flow.json");
+  if (existsSync(legacy)) return JSON.parse(readFileSync(legacy, "utf8"));
+  die("[git-flow] git-flow.json не найден (вендоренный пресет). Синк: node init.mjs .");
 }
 
 // --- Политики пресета (чистые функции — бросают Error, main ловит) -------------

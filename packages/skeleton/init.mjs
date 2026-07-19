@@ -298,8 +298,30 @@ const knownTargets = () =>
   new Set(Object.keys(TEMPLATE.targets ?? {}).filter((t) => !t.startsWith("$")));
 
 // Enum mechanism (пресет-контракт -98): КАК пресет потребляется. extends (nx/biome) / import
-// (vite) / read (git-preset ЧИТАЕТСЯ тулингом — не extends/import; DEVOPSER-103). Расширяемо.
+// (vite) / read (git-flow ЧИТАЕТСЯ тулингом — не extends/import; DEVOPSER-103). Расширяемо.
 const KNOWN_MECHANISMS = new Set(["extends", "import", "read"]);
+
+// git-flow-пресет доставляется ВЕНДОРЕННЫМ managed-файлом git-flow.json (не npm; language-agnostic,
+// DEVOPSER-113) — его метаданные (omnifield) движок читает из эталона, а не из node_modules.
+function vendoredGitFlowMeta() {
+  try {
+    return JSON.parse(readEtalon("git-flow.json")).omnifield ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Валидация метаданных пресета (target/mechanism/kind ∈ известные). Общая для npm- и вендоренных.
+function validatePresetMeta(label, meta) {
+  const errors = [];
+  if (meta.kind && meta.kind !== "preset") errors.push(`${label}: kind '${meta.kind}' ≠ preset`);
+  const targets = knownTargets();
+  if (!targets.has(meta.target))
+    errors.push(`${label}: target '${meta.target}' ∉ известные {${[...targets].join(", ")}}`);
+  if (meta.mechanism && !KNOWN_MECHANISMS.has(meta.mechanism))
+    errors.push(`${label}: mechanism '${meta.mechanism}' ∉ {${[...KNOWN_MECHANISMS].join(", ")}}`);
+  return errors;
+}
 
 // «Пресет в рамке»: для каждого bound-пресета — (а) slot биндинга == slot, объявленный пресетом;
 // (б) если конфиг слота ПРИСУТСТВУЕТ в репо, declared stack пресета обязан быть в рамке стека
@@ -318,27 +340,21 @@ function validatePresets(target, stacks) {
     if (!range) errors.push(`биндинг слота '${slot}': '${ref}' без версии (нужно ${pkg}@^ver)`);
     const meta = resolvePresetMeta(pkg, target);
     if (!meta) continue; // не резолвится (до install) — гейт в CI, где deps стоят
-    if (meta.kind && meta.kind !== "preset")
-      errors.push(`биндинг '${slot}' → ${pkg}: kind '${meta.kind}' ≠ preset`);
+    errors.push(...validatePresetMeta(`биндинг '${slot}' → ${pkg}`, meta));
     if (meta.slot !== slot)
       errors.push(`биндинг '${slot}' → ${pkg}, но пресет объявляет slot '${meta.slot}'`);
-    // target пресета обязан быть из известной таксономии (DEVOPSER-101). unknown → loud-fail.
-    const targets = knownTargets();
-    if (!targets.has(meta.target))
-      errors.push(
-        `биндинг '${slot}' → ${pkg}: target '${meta.target}' ∉ известные {${[...targets].join(", ")}}`,
-      );
-    // mechanism пресета — из enum контракта (DEVOPSER-103: + read). unknown → loud-fail.
-    if (meta.mechanism && !KNOWN_MECHANISMS.has(meta.mechanism))
-      errors.push(
-        `биндинг '${slot}' → ${pkg}: mechanism '${meta.mechanism}' ∉ {${[...KNOWN_MECHANISMS].join(", ")}}`,
-      );
     const dest = slotDest[slot];
     if (dest && existsSync(join(target, dest)) && !stackInFrame(meta.stack, stacks))
       errors.push(
         `${dest} тянет ${pkg} (stack ${JSON.stringify(meta.stack)}) — вне рамки репо [${stacks.join(", ")}]`,
       );
   }
+
+  // Вендоренный git-flow-пресет (DEVOPSER-113): метаданные из git-flow.json.omnifield — валидируем
+  // так же (target/mechanism/kind ∈ известные). stack:any → всегда в рамке, dest-проверки нет.
+  const gf = vendoredGitFlowMeta();
+  if (gf) errors.push(...validatePresetMeta("git-flow.json (вендоренный пресет)", gf));
+
   return errors;
 }
 
@@ -352,6 +368,9 @@ function reportTargets(target) {
     const meta = resolvePresetMeta(parsePresetRef(ref).pkg, target);
     if (meta?.target && groups[meta.target]) groups[meta.target].push(slot);
   }
+  // вендоренный git-flow-пресет (не npm, DEVOPSER-113)
+  const gf = vendoredGitFlowMeta();
+  if (gf?.target && groups[gf.target]) groups[gf.target].push(gf.slot);
   const line = Object.entries(groups)
     .map(([t, slots]) => `${t}: ${slots.length ? slots.join(", ") : "—"}`)
     .join(" | ");

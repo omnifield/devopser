@@ -16,7 +16,8 @@
     { "src": "devbox.sh", "dest": "scripts/devbox.sh", "exec": true, "mode": "exact" },
     { "src": "devbox-manifest.mjs", "dest": "scripts/devbox-manifest.mjs", "mode": "exact" },
     { "src": "devbox-publish.mjs", "dest": "scripts/devbox-publish.mjs", "mode": "exact" },
-    { "src": "git-flow.mjs", "dest": "scripts/git-flow.mjs", "mode": "exact" }
+    { "src": "git-flow.mjs", "dest": "scripts/git-flow.mjs", "mode": "exact" },
+    { "src": "git-flow.json", "dest": "git-flow.json", "mode": "exact" }
   ],
   "block": [{ "src": "gitignore-block", "dest": ".gitignore", "mode": "block" }],
   "pins": [
@@ -42,14 +43,13 @@
     ]
   },
   "presets": {
-    "$comment": "Биндинг слот → @omnifield/X-preset@^ver (DEVOPSER-98): рамка знает свои пресеты по name@version, не имплицитом в extends-строке конфига. Валиден для ЛЮБОГО пресета (repo-config сейчас; git-flow/release — впредь, DEVOPSER-108). Declared stack/slot/mechanism пресет объявляет сам (блок omnifield его package.json) — тут только пин; init.mjs сверяет «пресет в рамке».",
+    "$comment": "Биндинг слот → @omnifield/X-preset@^ver (DEVOPSER-98): npm-доставляемые repo-config пресеты (nx/biome/vite) — JS-тул-конфиги, extends'ятся JS-репо. Рамка знает их по name@version (version-guard + consumer-dep drift). git-flow — НЕ здесь: доставляется вендоренным managed-файлом git-flow.json (language-agnostic, DEVOPSER-113), не npm; его метаданные — в git-flow.json.omnifield.",
     "nx": "@omnifield/nx-preset@^0.1.1",
     "biome": "@omnifield/biome-preset@^0.1.1",
-    "vite": "@omnifield/vite-preset@^0.1.0",
-    "git-flow": "@omnifield/git-preset@^0.1.0"
+    "vite": "@omnifield/vite-preset@^0.1.0"
   },
   "targets": {
-    "$comment": "ТАКСОНОМИЯ таргетов (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает — ось группировки slots (slot=конкретный конфиг, target=его класс). Известные таргеты = ключи; init.mjs валит пресет с target ∉ этого набора (loud-fail). Статус: active = движок обрабатывает (repo-config: nx/biome/vite); bound = пресет привязан+валидируется, но процессор ещё не построен (git-flow: @omnifield/git-preset, DEVOPSER-103 — материализация/скриптованные git-операции следом); declared = пустая plug-in точка (release, под будущее). Подключение — ДЕКЛАРАЦИЕЙ target в метаданных пресета, не спецкейсом в init.",
+    "$comment": "ТАКСОНОМИЯ таргетов (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает — ось группировки slots (slot=конкретный конфиг, target=его класс). Известные таргеты = ключи; init.mjs валит пресет с target ∉ этого набора (loud-fail). Статус: active = движок обрабатывает (repo-config: nx/biome/vite, npm-доставка); bound = пресет привязан+валидируется (git-flow: вендоренный git-flow.json, DEVOPSER-113 — language-agnostic, инструмент+rulesets по нему уже есть); declared = пустая plug-in точка (release, под будущее). Подключение — ДЕКЛАРАЦИЕЙ target в метаданных пресета, не спецкейсом в init.",
     "repo-config": "active",
     "release": "declared",
     "git-flow": "bound"

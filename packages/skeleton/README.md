@@ -63,12 +63,13 @@ git-flow/release-пресеты (DEVOPSER-108), не только repo-config.
 | `kind` | `preset` (отличие от будущих `kind`-ов рамки) |
 | `slot` | какой слот рамки наполняет (`nx`/`biome`/`vite`/…) |
 | `stack` | где валиден: `node`\|`go`\|`frontend`\|`any` (или массив) — для валидации «в рамке» |
-| `mechanism` | как потребляется: `extends` (nx/biome) \| `import` (vite) \| `read` (git-preset — читается тулингом) |
+| `mechanism` | как потребляется: `extends` (nx/biome) \| `import` (vite) \| `read` (git-flow — читается тулингом) |
 | `target` | КАТЕГОРИЯ настраиваемого: `repo-config`\|`release`\|`git-flow` (см. «Таргеты пресетов») |
 
 Текущие пресеты: `@omnifield/nx-preset` (slot `nx`, stack `node`, extends) · `@omnifield/biome-preset`
 (slot `biome`, stack `node`, extends) · `@omnifield/vite-preset` (slot `vite`, stack `frontend`, import) ·
-`@omnifield/git-preset` (slot `git-flow`, stack `any`, read — первый не-repo-config таргет, DEVOPSER-103).
+git-flow (slot `git-flow`, stack `any`, read — первый не-repo-config таргет, DEVOPSER-103) — доставляется
+НЕ npm, а вендоренным managed-файлом `git-flow.json` (language-agnostic, DEVOPSER-113; см. ниже).
 
 **2. Биндинг `template.json.presets`** — слот → `@omnifield/X-preset@^ver`: рамка знает свои
 пресеты по `name@version` (композиция ссылкой, не копией — направление consumer→provider,
@@ -105,7 +106,7 @@ DEVOPSER-108), а не имплицитом в `extends`-строке конфи
 |---|---|---|
 | `repo-config` | `active` | конфиги репо — движок обрабатывает (слоты `nx`, `biome`, `vite`) |
 | `release` | `declared` | plug-in точка (пусто) — под будущее |
-| `git-flow` | `bound` | пресет `@omnifield/git-preset` привязан+валидируется; процессор — следом |
+| `git-flow` | `bound` | вендоренный `git-flow.json` привязан+валидируется; инструмент+rulesets по нему уже есть |
 
 Статус: **`active`** = движок обрабатывает; **`bound`** = пресет привязан и валидируется, но
 процессор (материализация/тулинг) ещё не построен; **`declared`** = пустая plug-in точка. `init.mjs`
@@ -113,21 +114,26 @@ DEVOPSER-108), а не имплицитом в `extends`-строке конфи
 `--check`), и репортит группировку (`[skeleton targets] repo-config: nx, biome, vite | release: — |
 git-flow: git-flow`).
 
-**git-flow подключён декларацией, не кодом (DEVOPSER-103):** пакет
-[`@omnifield/git-preset`](../git-preset/README.md) издан с `omnifield.target: "git-flow"`,
-`slot: "git-flow"`, `stack: "any"`, `mechanism: "read"` (пресет ЧИТАЕТСЯ тулингом — новый режим,
-расширяет enum `extends`\|`import`\|`read`). `template.json.presets` биндит `git-flow` →
-`@omnifield/git-preset@^ver`; движок валидирует (target известен, «в рамке» т.к. `stack:any`,
-версия по -100) — **без нового спецкейса в init**. Статус `bound`→`active`, когда появится
-процессор (rulesets-материализация / скриптованные git-операции — отдельные слайсы).
+**git-flow подключён декларацией, не кодом (DEVOPSER-103):** метаданные (`omnifield.target:
+"git-flow"`, `slot: "git-flow"`, `stack: "any"`, `mechanism: "read"` — пресет ЧИТАЕТСЯ тулингом,
+расширяет enum `extends`\|`import`\|`read`) + `frame`/`defaults` живут в **`git-flow.json`**; движок
+валидирует их (target из таксономии, mechanism из enum) — **без нового спецкейса в init**.
 
-Пресет-контракт (метаданные + биндинг + валидация «в рамке» + версии) — **общий**, поэтому
-git-flow ложится на тот же механизм, что repo-config (композиция DEVOPSER-108).
+**Доставка — вендоринг, не npm (DEVOPSER-113):** `git-flow.json` — **managed вендоренный файл**
+(`mode:exact`, как `git-flow.mjs`), init синкает его в **любой** репо любого стека (go-primary/
+polyglot тоже) — **language-agnostic, ноль node_modules**. Пилот tasker вскрыл: npm-доставка
+(`@omnifield/git-preset`) не долетала до go-репо без root `package.json`. npm-пакет **ретайрен**;
+версионирование git-flow = managed drift (bump эталона → drift-check краснеет → sync).
+repo-config пресеты (nx/biome/vite) остаются npm — это JS-тул-конфиги, нужны только JS-репо.
+
+Пресет-контракт (метаданные + валидация «в рамке») — **общий**, поэтому git-flow ложится на тот
+же движок, что repo-config (композиция DEVOPSER-108).
 
 ## git-инструмент (`scripts/git-flow.mjs`, DEVOPSER-106)
 
-Managed-скрипт (mode `exact`, вендорится+drift как `devbox-*`), который **ЧИТАЕТ** git-пресет
-(`@omnifield/git-preset`) и делает полный луп git без ручных команд. Zero-dep — шелл `git`+`gh`.
+Managed-скрипт (mode `exact`, вендорится+drift как `devbox-*`), который **ЧИТАЕТ** вендоренный
+`git-flow.json` (локальный, любой стек — DEVOPSER-113) и делает полный луп git без ручных команд.
+Zero-dep — шелл `git`+`gh`.
 Все политики — из пресета; хардкода флоу нет.
 
 | Субкоманда | Что | Из пресета |
@@ -231,6 +237,7 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 |---|---|
 | `.editorconfig` · `.gitattributes` · `.npmrc` · `.husky/pre-commit` · `.husky/pre-push` | точная копия эталона |
 | `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/devbox-manifest.mjs` · `scripts/devbox-publish.mjs` · `scripts/git-flow.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже; `git-flow.mjs` — git-инструмент, DEVOPSER-106) |
+| `git-flow.json` | вендоренный git-flow-пресет (language-agnostic, любой стек; DEVOPSER-113) — точная копия эталона |
 | `.gitignore` | managed-блок между маркерами `>>> omnifield-skeleton` — ниже блока репо дописывает своё |
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
