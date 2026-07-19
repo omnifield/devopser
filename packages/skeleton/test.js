@@ -23,7 +23,6 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   buildRulesetSpec,
-  ciJobNames,
   diffRulesets,
   dispatch,
   mergeFlag,
@@ -678,21 +677,18 @@ test("git-flow: агент-agnostic — в инструменте ноль actor
 
 // --- Rulesets-материализация (DEVOPSER-110): git-пресет → GitHub-rulesets ------
 
-test("git-flow rulesets: required-checks из ПОТРЕБИТЕЛЬСКОГО ci.yml (go+web → оба, DEVOPSER-114 #1)", () => {
-  const repo = mkRepo();
-  try {
-    // go+frontend-репо: ci.yml несёт джобы go + web (как раскатывает init). Без platform/repo-flow.json.
-    mkdirSync(join(repo, ".github/workflows"), { recursive: true });
-    writeFileSync(
-      join(repo, ".github/workflows/ci.yml"),
-      "name: CI\non:\n  pull_request:\njobs:\n  go:\n    uses: x/go-ci.yml@main\n  web:\n    uses: x/web-ci.yml@main\n    with:\n      working-directory: web\n",
-    );
-    assert.deepEqual(ciJobNames(repo), ["go", "web"], "required = actual CI-джобы, не только go");
-    // репо без ci.yml → нет required-checks (нельзя требовать несуществующее).
-    assert.deepEqual(ciJobNames(join(repo, "nope")), []);
-  } finally {
-    rmSync(repo, { recursive: true, force: true });
-  }
+// Мок check-run/repo окружения для rulesets-пути (DEVOPSER-117: реальные check-run имена).
+// reusable-caller'ы GitHub именует '<job> / <inner>' — голых go/web НЕТ.
+const REAL_CHECKS = ["go / Go (build·vet·test)", "web / Web (build)"];
+const rulesetsEnv = (nwo, extra = {}) => ({
+  "gh repo view --json nameWithOwner": { code: 0, out: `${nwo}\n`, err: "" },
+  "gh repo view --json defaultBranchRef": { code: 0, out: "main\n", err: "" },
+  [`gh api repos/${nwo}/commits/main/check-runs`]: {
+    code: 0,
+    out: `${REAL_CHECKS.join("\n")}\n`,
+    err: "",
+  },
+  ...extra,
 });
 
 test("git-flow rulesets: buildRulesetSpec из frame+defaults (mainProtected/prRequired/checks)", () => {
@@ -737,74 +733,84 @@ test("git-flow rulesets: diffRulesets — отсутствие/дрейф/сов
   );
 });
 
-test("git-flow rulesets (check): нет ruleset → loud-fail (дрейф против пресета)", async () => {
-  const repo = mkRepo(); // пустой → detectStacks → ['node']
-  try {
-    const ex = mockExec({
-      "git rev-parse --show-toplevel": { code: 0, out: `${repo}\n`, err: "" },
-      "gh repo view": { code: 0, out: "omnifield/devopser\n", err: "" },
-      "gh api repos/omnifield/devopser/rulesets": { code: 0, out: "[]", err: "" },
-    });
-    await assert.rejects(dispatch(["rulesets"], ex, GIT_PRESET, {}), /дрейф против git-пресета/);
-  } finally {
-    rmSync(repo, { recursive: true, force: true });
-  }
+test("git-flow rulesets: required-контексты = РЕАЛЬНЫЕ check-run имена, не ключи job'ов (DEVOPSER-117)", async () => {
+  // desired строится из фактических check-run'ов ('go / Go …'), а ruleset с ключами [go,web] → дрейф.
+  const desired = buildRulesetSpec(GIT_PRESET, REAL_CHECKS);
+  const byKeys = buildRulesetSpec(GIT_PRESET, ["go", "web"]); // старое (неверное) поведение
+  const ex = mockExec(
+    rulesetsEnv("o/r", {
+      "gh api repos/o/r/rulesets/9": { code: 0, out: JSON.stringify(byKeys), err: "" },
+      "gh api repos/o/r/rulesets": {
+        code: 0,
+        out: JSON.stringify([{ name: "omnifield-git-flow", id: 9 }]),
+        err: "",
+      },
+    }),
+  );
+  // desired несёт реальные контексты; ruleset с голыми ключами → drift → loud-fail.
+  assert.deepEqual(
+    desired.rules
+      .find((r) => r.type === "required_status_checks")
+      .parameters.required_status_checks.map((c) => c.context),
+    REAL_CHECKS,
+    "desired = реальные check-run имена",
+  );
+  await assert.rejects(dispatch(["rulesets"], ex, GIT_PRESET, {}), /дрейф против git-пресета/);
 });
 
-test("git-flow rulesets (check): ruleset совпал с пресетом → чисто (no throw)", async () => {
-  const repo = mkRepo();
-  try {
-    // ci.yml потребителя → required-checks [node]; desired строится из тех же.
-    mkdirSync(join(repo, ".github/workflows"), { recursive: true });
-    writeFileSync(join(repo, ".github/workflows/ci.yml"), "jobs:\n  node:\n    uses: x@main\n");
-    const desired = buildRulesetSpec(GIT_PRESET, ciJobNames(repo));
-    const ex = mockExec({
-      "git rev-parse --show-toplevel": { code: 0, out: `${repo}\n`, err: "" },
-      "gh repo view": { code: 0, out: "o/r\n", err: "" },
+test("git-flow rulesets (check): ruleset с реальными контекстами → чисто (no throw)", async () => {
+  const desired = buildRulesetSpec(GIT_PRESET, REAL_CHECKS);
+  const ex = mockExec(
+    rulesetsEnv("o/r", {
       "gh api repos/o/r/rulesets/42": { code: 0, out: JSON.stringify(desired), err: "" },
       "gh api repos/o/r/rulesets": {
         code: 0,
         out: JSON.stringify([{ name: "omnifield-git-flow", id: 42 }]),
         err: "",
       },
-    });
-    await dispatch(["rulesets"], ex, GIT_PRESET, {});
-    assert.ok(ex.calls.log.some((l) => l.includes("совпадает с пресетом")));
-  } finally {
-    rmSync(repo, { recursive: true, force: true });
-  }
+    }),
+  );
+  await dispatch(["rulesets"], ex, GIT_PRESET, {});
+  assert.ok(ex.calls.log.some((l) => l.includes("совпадает с пресетом")));
+});
+
+test("git-flow rulesets: check-run'ов ещё нет → loud-warn (не молча ключи job'ов)", async () => {
+  const ex = mockExec({
+    "gh repo view --json nameWithOwner": { code: 0, out: "o/r\n", err: "" },
+    "gh repo view --json defaultBranchRef": { code: 0, out: "main\n", err: "" },
+    "gh api repos/o/r/commits/main/check-runs": { code: 0, out: "\n", err: "" }, // прогонов нет
+    "gh api repos/o/r/rulesets": { code: 0, out: "[]", err: "" },
+  });
+  await assert.rejects(dispatch(["rulesets"], ex, GIT_PRESET, {}), /дрейф/); // ruleset отсутствует
+  assert.ok(
+    ex.calls.log.some((l) => l.includes("check-run'ов на default-ветке нет")),
+    "loud-warn о пустых прогонах",
+  );
 });
 
 test("git-flow rulesets --apply: идемпотентно (нет → POST; есть → PUT) через gh api", async () => {
-  const repo = mkRepo();
-  try {
-    const post = mockExec({
-      "git rev-parse --show-toplevel": { code: 0, out: `${repo}\n`, err: "" },
-      "gh repo view": { code: 0, out: "o/r\n", err: "" },
-      "gh api repos/o/r/rulesets": { code: 0, out: "[]", err: "" },
-    });
-    await dispatch(["rulesets", "--apply"], post, GIT_PRESET, {});
-    assert.ok(
-      post.calls.gh.some((c) => c.startsWith("api repos/o/r/rulesets --method POST")),
-      "нет ruleset → POST",
-    );
-    const put = mockExec({
-      "git rev-parse --show-toplevel": { code: 0, out: `${repo}\n`, err: "" },
-      "gh repo view": { code: 0, out: "o/r\n", err: "" },
+  const post = mockExec(
+    rulesetsEnv("o/r", { "gh api repos/o/r/rulesets": { code: 0, out: "[]", err: "" } }),
+  );
+  await dispatch(["rulesets", "--apply"], post, GIT_PRESET, {});
+  assert.ok(
+    post.calls.gh.some((c) => c.startsWith("api repos/o/r/rulesets --method POST")),
+    "нет ruleset → POST",
+  );
+  const put = mockExec(
+    rulesetsEnv("o/r", {
       "gh api repos/o/r/rulesets": {
         code: 0,
         out: JSON.stringify([{ name: "omnifield-git-flow", id: 7 }]),
         err: "",
       },
-    });
-    await dispatch(["rulesets", "--apply"], put, GIT_PRESET, {});
-    assert.ok(
-      put.calls.gh.some((c) => c.startsWith("api repos/o/r/rulesets/7 --method PUT")),
-      "есть ruleset → PUT (идемпотентно)",
-    );
-  } finally {
-    rmSync(repo, { recursive: true, force: true });
-  }
+    }),
+  );
+  await dispatch(["rulesets", "--apply"], put, GIT_PRESET, {});
+  assert.ok(
+    put.calls.gh.some((c) => c.startsWith("api repos/o/r/rulesets/7 --method PUT")),
+    "есть ruleset → PUT (идемпотентно)",
+  );
 });
 
 test("git-flow: ошибка gh прокидывает stderr наружу, не 'code 1' (DEVOPSER-114 #3)", async () => {
