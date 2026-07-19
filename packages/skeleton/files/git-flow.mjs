@@ -22,7 +22,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -92,23 +92,100 @@ export function mergeFlag(merge) {
   return map[merge];
 }
 
+// --- Rulesets-материализация (DEVOPSER-110): git-пресет → GitHub-rulesets ------
+// Единый источник enforcement = пресет (замещает ручные rulesets). Чистые функции —
+// генерация desired-спеки + drift-диф; apply/check шелит gh api (мок в тестах).
+
+const RULESET_NAME = "omnifield-git-flow";
+
+// Стек → имя required-check (= имя job'а CI-caller'а per stack; зеркалит template.json.ci.jobs:
+// go→go-ci "go", node→node-ci "node", frontend→web-ci "web"). "from-stack" тянет отсюда.
+export function stackChecks(stacks) {
+  const map = { go: "go", node: "node", frontend: "web" };
+  return stacks.map((s) => map[s]).filter(Boolean);
+}
+
+// git-пресет (frame+defaults) + required-checks → desired ruleset-спека (GitHub rulesets API).
+// frame.mainProtected → защита ветки по умолчанию (без удаления/force-push); frame.prRequired →
+// мерж только через PR; requiredChecks → required status checks. Ноль actor/ролей.
+export function buildRulesetSpec(preset, checks) {
+  const rules = [];
+  if (preset.frame?.mainProtected) {
+    rules.push({ type: "deletion" });
+    rules.push({ type: "non_fast_forward" });
+  }
+  if (preset.frame?.prRequired)
+    rules.push({ type: "pull_request", parameters: { required_approving_review_count: 0 } });
+  if (checks.length)
+    rules.push({
+      type: "required_status_checks",
+      parameters: {
+        strict_required_status_checks_policy: true,
+        required_status_checks: checks.map((c) => ({ context: c })),
+      },
+    });
+  return {
+    name: RULESET_NAME,
+    target: "branch",
+    enforcement: "active",
+    conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
+    rules,
+  };
+}
+
+// Каноничный срез ruleset'а для сравнения (GitHub добавляет id/_links/… — игнорируем).
+function normalizeRuleset(rs) {
+  const rules = rs?.rules ?? [];
+  const checks =
+    rules.find((r) => r.type === "required_status_checks")?.parameters?.required_status_checks ??
+    [];
+  return {
+    enforcement: rs?.enforcement,
+    target: rs?.target,
+    include: rs?.conditions?.ref_name?.include ?? [],
+    ruleTypes: rules.map((r) => r.type).sort(),
+    checks: checks.map((c) => c.context).sort(),
+  };
+}
+
+// Дрейф текущего ruleset против desired (пресет) → список расхождений ([] = чисто).
+export function diffRulesets(current, desired) {
+  if (!current) return [`ruleset ${RULESET_NAME} отсутствует (не материализован)`];
+  const a = normalizeRuleset(current);
+  const b = normalizeRuleset(desired);
+  const drift = [];
+  const cmp = (field, x, y) => {
+    if (JSON.stringify(x) !== JSON.stringify(y))
+      drift.push(`${field}: ${JSON.stringify(x)} ≠ ${JSON.stringify(y)}`);
+  };
+  cmp("enforcement", a.enforcement, b.enforcement);
+  cmp("target", a.target, b.target);
+  cmp("ref_name.include", a.include, b.include);
+  cmp("rules", a.ruleTypes, b.ruleTypes);
+  cmp("required_checks", a.checks, b.checks);
+  return drift;
+}
+
 // --- Executor: тонкая обёртка git/gh (инъектируется — тесты подсовывают мок) ---
 
 export function realExec() {
-  const call = (bin) => (args) => {
-    const r = spawnSync(bin, args, { encoding: "utf8" });
-    return { code: r.status ?? 1, out: r.stdout ?? "", err: r.stderr ?? "" };
-  };
+  const call =
+    (bin) =>
+    (args, opts = {}) => {
+      const r = spawnSync(bin, args, { encoding: "utf8", ...opts });
+      return { code: r.status ?? 1, out: r.stdout ?? "", err: r.stderr ?? "" };
+    };
   return { git: call("git"), gh: call("gh"), log: (m) => console.log(m) };
 }
 
-// Мутация (write git/gh): --dry-run печатает, не выполняет; ненулевой код → Error.
-function mutate(exec, dry, kind, args) {
+// Мутация (write git/gh): --dry-run печатает, не выполняет; ненулевой код → Error. Опц. input —
+// тело запроса (stdin, для gh api --input -).
+function mutate(exec, dry, kind, args, input) {
   if (dry) {
     exec.log(`[dry-run] ${kind} ${args.join(" ")}`);
     return { code: 0, out: "", err: "" };
   }
-  const r = exec[kind](args);
+  const r = input === undefined ? exec[kind](args) : exec[kind](args, { input });
   if (r.code !== 0)
     throw new Error(`${kind} ${args.join(" ")} → ${(r.err || r.out || `code ${r.code}`).trim()}`);
   return r;
@@ -201,6 +278,75 @@ async function land(exec, preset, _flags, { dry }) {
   syncMain(exec, { dry });
 }
 
+// Стек репо (как init.mjs resolveStacks): repo-flow.json (девопсер-side, если есть) → факты.
+function detectStacks(root) {
+  const flow = join(root, "platform", "repo-flow.json");
+  if (existsSync(flow)) {
+    const entry = JSON.parse(readFileSync(flow, "utf8"))[basename(root)];
+    if (Array.isArray(entry?.stack) && entry.stack.length) return entry.stack;
+  }
+  const s = [];
+  if (existsSync(join(root, "go.mod"))) s.push("go");
+  if (existsSync(join(root, "package.json"))) s.push("node");
+  return s.length ? s : ["node"];
+}
+
+// Путь GitHub rulesets API текущего репо (nameWithOwner в переменной — литерала-плейсхолдера нет).
+function rulesetsApiPath(exec) {
+  const nwo = read(
+    exec,
+    "gh",
+    ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+    "репо",
+  );
+  return `repos/${nwo}/rulesets`;
+}
+
+// rulesets — материализатор enforcement из git-пресета. Дефолт = check (дрейф → loud-fail);
+// --apply применяет через gh api (идемпотентно: PUT если ruleset есть, иначе POST). Admin-scope
+// токен для apply — env-инжект (gh читает GH_TOKEN), НЕ хардкодится.
+async function rulesets(exec, preset, { apply, dry }) {
+  const root = repoRoot(exec);
+  const stacks = detectStacks(root);
+  const rc = preset.defaults?.requiredChecks;
+  const checks = rc === "from-stack" ? stackChecks(stacks) : Array.isArray(rc) ? rc : [];
+  const desired = buildRulesetSpec(preset, checks);
+  const path = rulesetsApiPath(exec);
+  const list = JSON.parse(read(exec, "gh", ["api", path], "rulesets") || "[]");
+  const existing = list.find((r) => r.name === RULESET_NAME);
+  exec.log(
+    `[git-flow] ruleset ${RULESET_NAME}: стек [${stacks.join(", ")}] → checks [${checks.join(", ")}].`,
+  );
+
+  if (apply) {
+    const method = existing ? "PUT" : "POST";
+    const at = existing ? `${path}/${existing.id}` : path;
+    if (dry) exec.log(`[dry-run] gh api ${at} --method ${method} (ruleset ${RULESET_NAME})`);
+    else
+      mutate(
+        exec,
+        false,
+        "gh",
+        ["api", at, "--method", method, "--input", "-"],
+        JSON.stringify(desired),
+      );
+    exec.log(`[git-flow] ruleset ${RULESET_NAME} применён (${method}).`);
+    return;
+  }
+
+  const current = existing
+    ? JSON.parse(read(exec, "gh", ["api", `${path}/${existing.id}`], "ruleset"))
+    : null;
+  const drift = diffRulesets(current, desired);
+  if (drift.length) {
+    for (const d of drift) exec.log(`  - ${d}`);
+    throw new Error(
+      `ruleset дрейф против git-пресета (${drift.length}) — синк: git-flow rulesets --apply`,
+    );
+  }
+  exec.log(`[git-flow] ruleset ${RULESET_NAME}: совпадает с пресетом (чисто).`);
+}
+
 function parseFlags(argv) {
   const f = {};
   for (let i = 0; i < argv.length; i++) {
@@ -226,20 +372,23 @@ export async function dispatch(argv, exec, preset, opts = {}) {
       return await land(exec, preset, parseFlags(rest), opts);
     case "sync":
       return syncMain(exec, opts);
+    case "rulesets":
+      return await rulesets(exec, preset, { apply: rest.includes("--apply"), dry: opts.dry });
     default:
-      throw new Error(`неизвестная команда: ${cmd} (start|commit|push|pr|land|sync)`);
+      throw new Error(`неизвестная команда: ${cmd} (start|commit|push|pr|land|sync|rulesets)`);
   }
 }
 
 function printHelp() {
   console.log(
-    "git-flow <start|commit|push|pr|land|sync> [args] [--dry-run]\n" +
+    "git-flow <start|commit|push|pr|land|sync|rulesets> [args] [--dry-run]\n" +
       "  start <type>/<slug>   ветка от origin/main (по branchNaming)\n" +
       "  commit <msg>          коммит (по commitConvention)\n" +
       "  push                  push ветки в origin\n" +
       "  pr [--title --body]   открыть PR (gh)\n" +
       "  land                  зелёные checks → merge (по пресету) → удалить ветку → sync main\n" +
-      "  sync                  local main = origin/main",
+      "  sync                  local main = origin/main\n" +
+      "  rulesets [--apply]    материализовать GitHub-rulesets из git-пресета (дефолт: check-дрейф)",
   );
 }
 

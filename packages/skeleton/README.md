@@ -138,10 +138,29 @@ Managed-скрипт (mode `exact`, вендорится+drift как `devbox-*`
 | `pr [--title --body]` | открыть PR (`gh`, `--base main`) | — |
 | `land` | зелёные checks → merge → удалить ветку → sync main | `frame.prRequired` (нужен OPEN PR) · `defaults.requiredChecks` · `defaults.merge` |
 | `sync` | локальный `main` = `origin/main` | — |
+| `rulesets [--apply]` | материализует GitHub-rulesets из пресета (дефолт: check-дрейф) | `frame.mainProtected`/`prRequired` · `defaults.requiredChecks` |
 
 `--dry-run` печатает намеренные мутации (`git`/`gh` write), не выполняя. **agent-agnostic:**
 инструмент про «кого» НЕ знает — ноль owner/ролей/прав/gate; кто вызывает = концерн потребителя.
-Это ИНСТРУМЕНТ (скриптованные операции); rulesets-материализация — отдельный слайс.
+
+### `rulesets` — enforcement из пресета (DEVOPSER-110)
+
+Единый источник enforcement = git-пресет (замещает ручные GitHub-rulesets — второй источник правды).
+Читает пресет + стек репо → desired ruleset-спека:
+
+- `frame.mainProtected` → защита ветки по умолчанию (правила `deletion` + `non_fast_forward`);
+- `frame.prRequired` → правило `pull_request` (мерж только через PR);
+- `defaults.requiredChecks: "from-stack"` → `required_status_checks` с контекстами из стека
+  (те же имена job'ов, что раздаёт CI-caller: `go`/`node`/`web` — зеркалит `template.json.ci.jobs`).
+
+**`rulesets`** (дефолт) — check: текущие GitHub-rulesets vs desired → **loud-fail при дрейфе**
+(гейт против ручного расхождения). **`rulesets --apply`** — идемпотентный apply через
+`gh api repos/…/rulesets` (`POST` если нет, `PUT` если есть).
+
+**Admin-токен** (apply меняет настройки репо → нужен scope `administration:write`): **env-инжект**
+(`gh` читает `GH_TOKEN`), секрет **НЕ хардкодится**. `apply` трогает GitHub-настройки — на СВОЁМ
+репо; раскатка на чужие продукты = отдельный rollout-шаг. Это ИНСТРУМЕНТ (скриптованные операции),
+не agent-политика.
 
 ## Версионирование пресетов + bump-дисциплина (DEVOPSER-100)
 
