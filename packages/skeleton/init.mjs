@@ -19,8 +19,10 @@
 //              working-directory фронта — из repo-flow.json (frontend.working-directory).
 //
 // Managed-набор (сверяется drift-check'ом; синк — только явной командой, не молча):
-//   общий (все стеки): .editorconfig / .gitattributes / .npmrc / .husky/* / devbox-* /
-//                      .gitignore managed-блок;  node: package.json пины.
+//   общий (все стеки): .editorconfig / .gitattributes / .npmrc / devbox-* /
+//                      .gitignore managed-блок;
+//   node: .husky/* (nx-хуки: sherif / nx affected — валидны только в nx-монорепо; go/frontend
+//         их не тянут, иначе drift-red / падающий хук — DEVOPSER-45) + package.json пины.
 // Init-only (создаются, если отсутствуют; НЕ drift-managed — репо легитимно правит):
 //   общий: .devcontainer / devbox.services.json / CI-caller'ы (ci.yml + pr-title.yml);
 //   node: nx.json / biome.json / dependabot;  go: .golangci.yml / sqlc.yaml.
@@ -244,12 +246,40 @@ function applyPins(e, { target, check, drift, actions, name }) {
   }
 }
 
+// Node/frontend-хвост postCreateCommand devcontainer'а (DEVOPSER-45): npm-whoami-гейт (@omnifield-PAT)
+// + pnpm install — ТОЛЬКО для node/frontend-стека. go-only → пустой хвост (devcontainer без npm/pnpm,
+// иначе go-репо без PAT падает на старте). Воркдир pnpm-install — из repo-flow (frontendWorkdir),
+// не хардкод 'web'. Только одинарные кавычки в шелле → валидный JSON без экранирования.
+function nodePostCreate(stacks, frontendWorkdir) {
+  if (!stacks.includes("node") && !stacks.includes("frontend")) return ""; // go-only: ноль npm/pnpm
+  const auth =
+    "(timeout 20 npm whoami --registry=https://npm.pkg.github.com >/dev/null 2>&1 || " +
+    "{ echo '✖ npm.pkg.github.com: нет валидного PAT в $NPM_CONFIG_USERCONFIG (секрет-volume " +
+    "omnifield-secrets) — @omnifield-пакеты не встанут. Занос кредов: devbox/README §Пост-шаги'; exit 1; })";
+  // Корень (nx-монорепо) покрывает root pnpm install; фронт-в-сабдире — воркдир из repo-flow
+  // (не хардкод 'web'). Воркдир-ветка только когда фронт живёт НЕ в корне.
+  const wd = frontendWorkdir;
+  const subdir =
+    wd && wd !== "." ? `{ [ -f ${wd}/package.json ] && pnpm -C ${wd} install --frozen-lockfile; } || ` : "";
+  const install = `{ [ -f package.json ] && pnpm install || ${subdir}echo 'no pnpm workspace — skip'; }`;
+  return ` && ${auth} && ${install}`;
+}
+
+// Токены сида, вычисляемые по стеку репо. __NAME__ → basename(target) (package.json name,
+// devcontainer network-alias — single-origin); __NODE_SETUP__ → стек-хвост devcontainer.
+function seedTokens({ name, stacks, frontendWorkdir }) {
+  return { __NAME__: name, __NODE_SETUP__: nodePostCreate(stacks, frontendWorkdir) };
+}
+
 // seed — init-only: создать, только если отсутствует; НЕ drift-managed (репо легитимно правит).
-// __NAME__ → basename(target): package.json name, devcontainer network-alias (single-origin).
-function applySeed(e, { target, actions, name }) {
+// Токены (__NAME__/__NODE_SETUP__) подставляются по стеку репо — тот же шаблон даёт стек-чистый
+// артефакт (go-devcontainer без node-утечек). Токен, отсутствующий в файле, → replaceAll no-op.
+function applySeed(e, { target, actions, tokens }) {
   const path = join(target, e.dest);
   if (existsSync(path)) return;
-  writeLf(path, readEtalon(e.src).replaceAll("__NAME__", name));
+  let content = readEtalon(e.src);
+  for (const [tok, val] of Object.entries(tokens)) content = content.replaceAll(tok, val);
+  writeLf(path, content);
   actions.push(`${e.dest}: создан из шаблона`);
 }
 
@@ -458,14 +488,22 @@ function main() {
   const actions = [];
 
   // 1-4. Рамка применяется ДИСПАТЧЕМ по declared mode (DEVOPSER-99), не по секции/массиву.
-  // Порядок применения (как прежде): exact (managed, все стеки) → block (.gitignore) →
+  // Порядок применения (как прежде): exact (managed, по стеку) → block (.gitignore) →
   // pins (package.json, node) → seed (init-only, per stack; только init, НЕ drift). Каждая
   // запись несёт mode → DISPATCH выбирает хендлер. seed в --check не участвует (init-only).
-  const ctx = { target, check, drift, actions, name: basename(target) };
+  const name = basename(target);
+  const tokens = seedTokens({ name, stacks, frontendWorkdir });
+  const ctx = { target, check, drift, actions, name, tokens };
   const seed = check
     ? []
     : [...COMMON_TEMPLATES, ...(hasNode ? NODE_TEMPLATES : []), ...(hasGo ? GO_TEMPLATES : [])];
-  const frame = [...MANAGED, ...BLOCK, ...PINS.filter((e) => inStack(e, stacks)), ...seed];
+  // MANAGED тоже фильтруется по стеку (DEVOPSER-45): .husky/* — node-only (nx-хуки), не всем стекам.
+  const frame = [
+    ...MANAGED.filter((e) => inStack(e, stacks)),
+    ...BLOCK,
+    ...PINS.filter((e) => inStack(e, stacks)),
+    ...seed,
+  ];
   for (const e of frame) DISPATCH[e.mode](e, ctx);
 
   // 5. CI-caller'ы per stack (mode seed по смыслу, но ci.yml — вычисляемый per-stack артефакт:

@@ -5,7 +5,7 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-# Reusable не расширяет права сам — явный permissions обнуляет неперечисленное
-# (объём — по канону каждого reusable: go → contents:read; node → +actions,+packages).
+# Reusable не расширяет права сам — явный permissions обнуляет неперечисленное (объём — по канону
+# каждого reusable: go → contents:read; frontend → +packages; node → +actions,+packages).
 permissions: { __PERMISSIONS__ }
 jobs:

@@ -4,8 +4,8 @@
     { "src": "editorconfig", "dest": ".editorconfig", "mode": "exact" },
     { "src": "gitattributes", "dest": ".gitattributes", "mode": "exact" },
     { "src": "npmrc", "dest": ".npmrc", "mode": "exact" },
-    { "src": "husky-pre-commit", "dest": ".husky/pre-commit", "mode": "exact" },
-    { "src": "husky-pre-push", "dest": ".husky/pre-push", "mode": "exact" },
+    { "src": "husky-pre-commit", "dest": ".husky/pre-commit", "stack": "node", "mode": "exact" },
+    { "src": "husky-pre-push", "dest": ".husky/pre-push", "stack": "node", "mode": "exact" },
     { "src": "devbox-services.mjs", "dest": "scripts/devbox-services.mjs", "mode": "exact" },
     {
       "src": "devbox-session.sh",
