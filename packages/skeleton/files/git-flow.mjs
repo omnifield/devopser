@@ -126,7 +126,18 @@ export function buildRulesetSpec(preset, checks) {
     rules.push({ type: "non_fast_forward" });
   }
   if (preset.frame?.prRequired)
-    rules.push({ type: "pull_request", parameters: { required_approving_review_count: 0 } });
+    // GitHub Rulesets API требует ПОЛНЫЙ набор pull_request-параметров (иначе 422; DEVOPSER-116).
+    // Дефолты сохраняют смысл frame.prRequired = мерж только через PR, без обязательных ревью.
+    rules.push({
+      type: "pull_request",
+      parameters: {
+        required_approving_review_count: 0,
+        dismiss_stale_reviews_on_push: false,
+        require_code_owner_review: false,
+        require_last_push_approval: false,
+        required_review_thread_resolution: false,
+      },
+    });
   if (checks.length)
     rules.push({
       type: "required_status_checks",
