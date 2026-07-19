@@ -176,12 +176,7 @@ test("каждый пресет объявляет метаданные omnifiel
 test("template.json биндит слот → @omnifield/X-preset@^ver; slot совпал с метаданными пресета", () => {
   const presets = TEMPLATE.presets;
   assert.ok(presets, "template.json должен нести биндинг presets");
-  const slotToLocal = {
-    nx: "nx-preset",
-    biome: "biome-preset",
-    vite: "vite-preset",
-    "git-flow": "git-preset",
-  };
+  const slotToLocal = { nx: "nx-preset", biome: "biome-preset", vite: "vite-preset" };
   for (const [slot, ref] of Object.entries(presets)) {
     if (slot.startsWith("$")) continue;
     // форма name@version (scoped: версия после последнего @).
@@ -457,10 +452,13 @@ test("пресет с unknown target → loud-fail (target вне таксоно
   }
 });
 
-// --- git-flow пресет (DEVOPSER-103): первый не-repo-config таргет на движке -----
+// --- git-flow пресет (DEVOPSER-103/-113): вендоренный, language-agnostic --------
 
-test("git-preset объявляет omnifield: target git-flow, slot git-flow, stack any, mechanism read", () => {
-  const o = PRESET_PKG("git-preset").omnifield;
+// git-flow.json = вендоренный эталон (managed-файл, не npm; DEVOPSER-113).
+const GIT_FLOW_JSON = () => JSON.parse(readFileSync(join(PKG_DIR, "files/git-flow.json"), "utf8"));
+
+test("git-flow.json.omnifield: target git-flow, slot git-flow, stack any, mechanism read", () => {
+  const o = GIT_FLOW_JSON().omnifield;
   assert.equal(o.kind, "preset");
   assert.equal(o.target, "git-flow");
   assert.equal(o.slot, "git-flow");
@@ -469,7 +467,7 @@ test("git-preset объявляет omnifield: target git-flow, slot git-flow, s
 });
 
 test("git-flow.json: frame (frozen) {mainProtected,prRequired} + defaults (overridable)", () => {
-  const cfg = JSON.parse(readFileSync(join(PKG_DIR, "../git-preset/git-flow.json"), "utf8"));
+  const cfg = GIT_FLOW_JSON();
   assert.equal(cfg.frame.mainProtected, true);
   assert.equal(cfg.frame.prRequired, true);
   for (const k of ["merge", "branchNaming", "requiredChecks", "commitConvention"])
@@ -492,11 +490,17 @@ test("git-flow.json: frame (frozen) {mainProtected,prRequired} + defaults (overr
     );
 });
 
-test("template.json биндит git-flow слот → @omnifield/git-preset; движок валидирует (в рамке)", () => {
-  assert.equal(TEMPLATE.presets["git-flow"], "@omnifield/git-preset@^0.1.0");
+test("git-flow вендорится managed (не npm); движок валидирует + репортит (DEVOPSER-113)", () => {
+  // git-flow БОЛЬШЕ не в presets (npm-биндинг) — доставка вендоренным managed-файлом.
+  assert.ok(!("git-flow" in TEMPLATE.presets), "git-flow не npm-пресет");
+  assert.ok(
+    TEMPLATE.managed.some((m) => m.dest === "git-flow.json" && m.mode === "exact"),
+    "git-flow.json — managed вендоренный (mode exact)",
+  );
   const repo = mkRepo();
   try {
     run(repo);
+    assert.ok(existsSync(join(repo, "git-flow.json")), "git-flow.json вендорится в репо");
     const c = run(repo, "--check");
     assert.equal(c.status, 0, c.stderr); // git-пресет распознан, в рамке (stack:any) — не валит
     assert.match(c.stdout, /git-flow: git-flow/, "git-flow target группирует свой пресет (bound)");
@@ -536,7 +540,30 @@ test("mechanism-enum: read валиден; unknown mechanism → loud-fail", () 
 
 // --- git-инструмент git-flow.mjs (DEVOPSER-106): agent-agnostic, по пресету -----
 
-const GIT_PRESET = resolvePreset(); // реальный @omnifield/git-preset (sibling монорепо)
+const GIT_PRESET = resolvePreset(); // вендоренный git-flow.json (эталон files/, DEVOPSER-113)
+
+test("git-flow: go-репо БЕЗ node_modules резолвит вендоренный пресет (language-agnostic)", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "go.mod"), "module x\n"); // go-стек, нет package.json/node_modules
+    assert.equal(run(repo).status, 0); // init вендорит git-flow.json + scripts/git-flow.mjs
+    assert.ok(existsSync(join(repo, "git-flow.json")), "git-flow.json вендорен в go-репо");
+    assert.ok(!existsSync(join(repo, "node_modules")), "go-репо без node_modules");
+    // git-flow.mjs (вендоренный в scripts/) резолвит пресет из локального git-flow.json.
+    const r = spawnSync(
+      process.execPath,
+      [join(repo, "scripts/git-flow.mjs"), "start", "bad name"],
+      {
+        cwd: repo,
+        encoding: "utf8",
+      },
+    );
+    // не «пресет не найден», а валидация имени по вендоренному branchNaming → резолв сработал.
+    assert.match(r.stderr, /branchNaming/, "резолв вендоренного пресета сработал (без npm)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
 
 // Мок-executor: пишет вызовы, отдаёт канон-ответы по префиксу команды (без реального git/gh).
 function mockExec(responses = {}) {
