@@ -152,14 +152,16 @@ Zero-dep — шелл `git`+`gh`.
 ### `rulesets` — enforcement из пресета (DEVOPSER-110)
 
 Единый источник enforcement = git-пресет (замещает ручные GitHub-rulesets — второй источник правды).
-Читает пресет + `.github/workflows/ci.yml` репо → desired ruleset-спека:
+Читает пресет + фактические проверки репо → desired ruleset-спека:
 
 - `frame.mainProtected` → защита ветки по умолчанию (правила `deletion` + `non_fast_forward`);
 - `frame.prRequired` → правило `pull_request` (мерж только через PR);
-- `defaults.requiredChecks: "from-stack"` → `required_status_checks` с контекстами = **именами
-  job'ов из `ci.yml` ПОТРЕБИТЕЛЯ** (actual CI = что реально прогоняется). Резолв из ci.yml, НЕ из
-  devopser-реестра (`platform/repo-flow.json` в потребителе нет; DEVOPSER-114 #1: go+web-репо
-  получает оба required-check'а, не только go). Нет `ci.yml` → нет required-checks.
+- `defaults.requiredChecks: "from-stack"` → `required_status_checks` с контекстами = **РЕАЛЬНЫМИ
+  именами check-run'ов default-ветки** (`gh api repos/…/commits/<default>/check-runs` →
+  `.check_runs[].name`; DEVOPSER-117). GitHub именует проверки reusable-caller'ов `'<job> / <inner>'`
+  (напр. `'go / Go (build·vet·test)'`) — голых ключей job'ов (`go`/`web`) в контекстах НЕТ, поэтому
+  ruleset ждёт именно реальные строки, иначе main залочен при зелёных. Ground truth,
+  самокорректируется. Прогонов ещё нет → **loud-warn** (required-checks пуст, не молча ключи).
 
 **`rulesets`** (дефолт) — check: текущие GitHub-rulesets vs desired → **loud-fail при дрейфе**
 (гейт против ручного расхождения). **`rulesets --apply`** — идемпотентный apply через
