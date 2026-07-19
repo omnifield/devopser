@@ -63,6 +63,18 @@ Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-
 - ⚠️ Изменение портов/маршрутов = **контракт** (потребители: brainer, writer, оракул) —
   только через architect + запись в `registry/`.
 
+## Git-флоу — приземление через инструмент (DEVOPSER-103/115)
+
+- **Все приземления — через `scripts/git-flow.mjs`** (вендоренный, agent-agnostic):
+  `start <type>/<slug>` → `commit <msg>` → `push` → `pr` → `land` (ждёт зелёные checks →
+  squash-merge → удаляет ветку → sync main). Ноль ручных `git`/`gh`-мутаций. **Architect тоже
+  сидит на нём** (пилот tasker подтверждён 2026-07-19).
+- **Пресет = единый источник enforcement:** `git-flow.json` (frame: mainProtected+prRequired;
+  defaults: squash, conventional, requiredChecks=from-stack). GitHub-rulesets материализуются
+  из него: `git-flow rulesets [--apply]` (ruleset `omnifield-git-flow`). Ручные rulesets не
+  плодить — правка enforcement идёт через пресет.
+- Прямой коммит/пуш в main запрещён рамкой (frame.mainProtected) — работай на ветке (`git-flow start`).
+
 ## Git-инфра (harness)
 
 - `.claude/hooks/git-gate.mjs` — hard-gate git-write для не-main. `main-session-marker.mjs`
