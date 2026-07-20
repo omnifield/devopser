@@ -66,8 +66,15 @@ export function validateBranchName(name, pattern) {
 export function validateCommitMessage(msg, convention) {
   if (!msg) throw new Error("commit требует сообщение");
   if (convention === "conventional") {
+    // сабж СО СТРОЧНОЙ — Latin ИЛИ кириллица (`: [a-zа-яё]`) — ЗЕРКАЛО CI-гейта
+    // .github/workflows/pr-title.yml subjectPattern `^[a-zа-яё].+$` (DEVOPSER-130). НЕ ASCII-only
+    // `^[a-z]` — тот резал русские сабжи (живой регресс, #53 «приземлить»); НЕ `\p{Ll}` — amannn
+    // гоняет regex без `u`-флага. Иначе `feat: Add x` проходил локальный commit, но падал на
+    // pr-title при land — сюрприз на самом дорогом шаге. PAIRED RULE: правишь тут — правь и
+    // pr-title.yml (типы уже совпадают: те же 11, вкл. revert). Типы branchNaming (9, без
+    // style/revert) намеренно уже — ветка ≠ сабж коммита.
     const re =
-      /^(feat|fix|chore|docs|refactor|test|perf|build|ci|style|revert)(\([\w./-]+\))?!?: .+/;
+      /^(feat|fix|chore|docs|refactor|test|perf|build|ci|style|revert)(\([\w./-]+\))?!?: [a-zа-яё].+/;
     if (!re.test(msg)) throw new Error(`коммит "${msg}" не conventional (type(scope): описание).`);
   }
   return msg;
@@ -238,12 +245,45 @@ function push(exec, preset, { dry }) {
   exec.log(`[git-flow] ${branch} → origin.`);
 }
 
+// Сабжекты коммитов ветки (origin/<base>..HEAD, старые→новые). [] если пусто/ошибка — pr НЕ
+// падает на этом (робастно; инвариант ниже всё равно даёт непустые title/body).
+function branchCommits(exec, base) {
+  const r = exec.git(["log", "--reverse", "--format=%s", `origin/${base}..HEAD`]);
+  if (r.code !== 0) return [];
+  return r.out
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Инвариант (DEVOPSER-129): pr ВСЕГДА порождает валидный non-interactive gh — title И body
+// удовлетворены (иначе `gh pr create` в non-interactive требует тело → падает).
+//  • ноль флагов          → `--fill` (gh выводит title+body из коммитов; чисто non-interactive).
+//  • иначе                → явные `--title`/`--body`; недостающее выводим из коммитов ветки,
+//                           фолбэк = сам title (затем branch). `--fill` НЕ мешаем с явным
+//                           `--title` (gh их не совмещает).
+// commits — сабжекты ветки (пустой массив ок); branch — фолбэк последней инстанции.
+export function buildPrArgs(flags, commits, branch, base = "main") {
+  const args = ["pr", "create", "--base", base];
+  if (!flags.title && !flags.body) {
+    args.push("--fill");
+    return args;
+  }
+  const derivedBody = commits.length ? commits.map((c) => `- ${c}`).join("\n") : "";
+  const title = flags.title || commits[0] || branch; // всегда непусто
+  const body = flags.body || derivedBody || flags.title || branch; // фолбэк = сам title
+  args.push("--title", title, "--body", body);
+  return args;
+}
+
 function pr(exec, preset, flags, { dry }) {
-  assertNotMain(currentBranch(exec), preset.frame);
-  const args = ["pr", "create", "--base", "main"];
-  if (flags.title) args.push("--title", flags.title);
-  if (flags.body) args.push("--body", flags.body);
-  if (!flags.title) args.push("--fill"); // тайтл/тело из коммитов
+  const branch = assertNotMain(currentBranch(exec), preset.frame);
+  const base = "main";
+  // Коммиты нужны ТОЛЬКО в derive-пути (ровно один из title/body задан). Оба заданы или ни одного
+  // (--fill) — чтение лишнее.
+  const needDerive = (flags.title || flags.body) && !(flags.title && flags.body);
+  const commits = needDerive ? branchCommits(exec, base) : [];
+  const args = buildPrArgs(flags, commits, branch, base);
   mutate(exec, dry, "gh", args);
   exec.log("[git-flow] PR открыт.");
 }
