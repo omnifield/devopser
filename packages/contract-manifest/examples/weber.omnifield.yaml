@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=<workspace-origin>/omnifield.schema.json
+# weber — frontend (веб-редактор карточек знаний).
+# Тончайший манифест: 3 обязательных поля + reach; spawnEligible/scopes — дефолты.
+# port = РЕАЛЬНЫЙ внутренний listening-порт продукта (weber dev-server слушает 5173).
+# Требование: manifest.reach.port === реальный порт, иначе nginx-upstream промахнётся
+# (port-consistency-gate, devopser). registry/ports.md — человек-зеркало, не «канон номеров».
+apiVersion: omnifield.dev/v1
+name: weber
+type: frontend
+title: Weber
+description: Веб-редактор карточек знаний
+reach:
+  routes:
+    - path: /weber
+      port: 5173
+integration:
+  deps: [brainer] # ходит в brainer API

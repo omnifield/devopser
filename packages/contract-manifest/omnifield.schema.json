@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://omnifield.dev/schema/omnifield.dev/v1/product-manifest.json",
+  "title": "Omnifield product manifest (omnifield.dev/v1)",
+  "$ref": "#/definitions/ProductManifest",
+  "definitions": {
+    "ProductManifest": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "omnifield.dev/v1"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "frontend",
+            "backend",
+            "fullstack",
+            "service"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "reach": {
+          "type": "object",
+          "properties": {
+            "routes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^\\/"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "service": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "port"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "routes"
+          ],
+          "additionalProperties": false
+        },
+        "integration": {
+          "type": "object",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "spawnEligible": {
+              "type": "boolean",
+              "default": false
+            },
+            "deps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "scopes": [],
+            "spawnEligible": false,
+            "deps": []
+          }
+        }
+      },
+      "required": [
+        "apiVersion",
+        "name",
+        "type"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
