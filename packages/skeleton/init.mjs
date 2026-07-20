@@ -96,7 +96,17 @@ function detectStacks(target) {
   const s = [];
   if (existsSync(join(target, "go.mod"))) s.push("go");
   if (existsSync(join(target, "package.json"))) s.push("node");
-  return s.length ? s : ["node"]; // пустой репо — безопасный дефолт (текущее поведение)
+  if (s.length) return s;
+  // Голый репо без объявленного стека (нет go.mod/package.json И нет repo-flow.json[<name>].stack —
+  // resolveStacks зовёт detect только без записи). НЕ гадаем МОЛЧА (DEVOPSER-131): молчаливый
+  // node-дефолт затягивал node-инфру в Go-репо без go.mod на момент провижна. Loud WARN в stderr;
+  // node-дефолт сохраняем для обратной совместимости (hard-require ломал бы пустые репо).
+  const name = basename(target);
+  console.error(
+    `[skeleton] ⚠ стек для «${name}» не объявлен — по умолчанию node.\n` +
+      `           Задай platform/repo-flow.json[${name}].stack ИЛИ добавь go.mod/package.json ПЕРЕД провижном.`,
+  );
+  return ["node"];
 }
 
 // Источник правды — repo-flow.json[<basename>]; иначе детект. Возвращаем и запись флоу

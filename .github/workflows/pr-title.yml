@@ -35,8 +35,11 @@ jobs:
           types: ${{ inputs.types }}
           requireScope: false
           # Канон экосистемы (из brainer): subject с маленькой буквы —
-          # "feat(backend): add x", не "Add x".
-          subjectPattern: ^[a-z].+$
+          # "feat(backend): add x", не "Add x". Latin ИЛИ кириллица (DEVOPSER-130):
+          # ASCII-only ^[a-z] резал русские сабжи; НЕ \p{Ll} — amannn без u-флага.
+          # PAIRED RULE: правишь тут — правь git-flow.mjs commit-regex.
+          subjectPattern: ^[a-zа-яё].+$
           subjectPatternError: |
             The PR title subject "{subject}" must start with a lowercase letter.
-            Example: "feat(backend): add session stop" (not "Add session stop").
+            Example: "feat(backend): add session stop" / "feat(backend): приземлить сессию"
+            (not "Add session stop" / "Приземлить сессию").
