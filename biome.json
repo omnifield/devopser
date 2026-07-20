@@ -12,7 +12,8 @@
       "!**/out-tsc",
       "!**/coverage",
       "!**/.claude",
-      "!**/pnpm-lock.yaml"
+      "!**/pnpm-lock.yaml",
+      "!**/omnifield.schema.json"
     ]
   }
 }
