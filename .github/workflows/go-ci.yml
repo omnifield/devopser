@@ -53,19 +53,35 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: false
+      # Codeless-модуль (go.mod без .go) — легитимное состояние (свежий standup: инфра
+      # приземляется до продуктового кода). Для vet/test/golangci нуль пакетов = exit 1
+      # (build терпит warning'ом). Гард — как у sqlc-drift ниже: есть пакеты → проверяем,
+      # нет → тихий skip. Один `go list`, дальше `if` по шагам. Для репо с кодом — no-op.
+      - name: detect go packages
+        id: pkgs
+        run: |
+          if [ -n "$(go list ./... 2>/dev/null)" ]; then
+            echo "has=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Go-модуль без пакетов (.go отсутствуют) → vet/test/golangci пропущены (codeless baseline)."
+          fi
       - name: build
         run: go build ./...
       - name: vet
+        if: steps.pkgs.outputs.has == 'true'
         run: go vet ./...
       # -race ловит гонки; конфиг линтеров — .golangci.yml потребителя (schema v2),
       # здесь только запуск с пином версии линтера (из tools выше).
       - name: test (race)
+        if: steps.pkgs.outputs.has == 'true'
         run: go test -race ./...
       # install-mode: goinstall — линтер собирается тулчейном репо (go.mod), не тянется
       # пребилт-бинарём. Наша Go-каденция bleeding-edge (1.26): пребилт golangci собран
       # более старым Go и ОТКАЗЫВАЕТСЯ линтить go.mod с более новой `go` — goinstall это
       # снимает (канон каденции, не костыль под конкретный репо).
       - name: golangci-lint
+        if: steps.pkgs.outputs.has == 'true'
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
