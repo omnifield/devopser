@@ -84,35 +84,36 @@ jobs:
 Мульти-стек репо (напр. go-бэк + standalone-фронт) держит оба job'а в одном `ci.yml`
 (`init.mjs` собирает их по стеку + объединяет `permissions`).
 
-## Гейты (rulesets — settings-as-code, `platform/`)
+## Гейты (rulesets — из git-flow-пресета)
 
-Гейты веток раскатывает `platform/apply-rulesets.mjs` (идемпотентно, PUT/POST по имени
-ruleset'а). Конфиг гейтов — **не хардкод в репо**, а `platform/repo-flow.json`
-(per-repo флаги + стек) + шаблоны `platform/rulesets/`.
+Гейты default-ветки материализует **`git-flow rulesets`** (`scripts/git-flow.mjs`,
+DEVOPSER-110) из вендоренного пресета `git-flow.json` (`frame`+`defaults`) — **единый
+источник enforcement**, per-repo (containers-native, без центрального механизма). На репо
+ровно один ruleset: `omnifield-git-flow`.
 
-| Ruleset | На кого | Что держит |
+| Правило | Из чего | Что держит |
 |---|---|---|
-| `main-integrity` | **все** репо org | запрет удаления/force-push default-ветки |
-| `flow-require-pr` | флаг `require-pr` в `repo-flow.json` | мерж в main только через PR (0 обяз. ревью) |
-| `flow-required-checks` | `require-pr` **и** непустой `stack` | **red CI блокирует мерж** — required-статус-чеки |
+| `deletion` + `non_fast_forward` | `frame.mainProtected` | запрет удаления/force-push default-ветки |
+| `pull_request` | `frame.prRequired` | мерж в main только через PR (0 обяз. ревью) |
+| `required_status_checks` | `defaults.requiredChecks` (`from-stack`) | **red CI блокирует мерж** |
 
-**required-checks = гейт конфигом, единый источник = стек.** Контексты (имена required-чеков)
-НЕ прописаны per-repo — **выводятся из `repo-flow.json.stack`**: стек `go`/`node`/`frontend`
-→ чек `<caller-job> / <job-name reusable>`, где `caller-job` = `go`/`node`/`web`, а `job-name`
-читается из самого reusable-воркфлоу (`*-ci.yml`) — переименование джобы синкает гейт
-автоматически, рассинхрона «required ждёт несуществующий чек» не случается.
+**required-checks = ground-truth check-run'ы** (DEVOPSER-117). При `requiredChecks:"from-stack"`
+контексты берутся из РЕАЛЬНЫХ имён проверок последнего прогона default-ветки
+(`gh api .../check-runs`), а не из карты стека — рассинхрон «required ждёт несуществующий
+чек» невозможен by construction. Прогонов ещё нет → required пуст (loud-warn): сначала
+зелёный CI, затем `git-flow rulesets --apply`.
 
-- **required = только субстантивное** (сборка/тест/линт/drift per stack). `pr-title`
-  (`semantic`) и прочие «мягкие»/флейки в required **НЕ попадают** by construction —
-  красный семантик-чек мерж не блокирует.
-- `strict` (branch up-to-date перед мержем) — **выключен** осознанно: не форсим ребейз
-  всего флота на каждый апдейт main.
-- Новый репо получает гейт **одной командой**: запись в `repo-flow.json` (`require-pr` +
-  `stack`) → `node platform/apply-rulesets.mjs` (или `... <repo>`).
-- Снятие флага НЕ удаляет ruleset на GitHub — снести руками/API (осознанная операция).
+- `git-flow rulesets` (дефолт) — **check-дрейф**: расхождение факта с пресетом → loud-fail.
+- `git-flow rulesets --apply` — материализовать/синкнуть (идемпотентно: PUT если ruleset
+  есть, иначе POST; admin-scope токен — env-инжект `GH_TOKEN`, не хардкод).
+- Новый репо получает гейт **своей же** командой `git-flow rulesets --apply` (пресет уже
+  вендорен init'ом) — центрального «одной командой на весь флот» механизма нет by design
+  (P0 самодостаточность: репо зависит от опубликованных артефактов, не от живого центра).
 
-`devopser` — юзер №0 собственного гейта (`repo-flow.json` → `stack:[node]`): этот репо
-мержит свои PR только через зелёный `node`-чек (догфуд).
+`devopser` — юзер №0 собственного гейта (стек `node` в `repo-flow.json`): мержит свои PR
+только через зелёный `node`-чек (догфуд). Стек репо (`repo-flow.json.stack`) остаётся входом
+для сборки `ci.yml` в `init.mjs`; на required-контексты гейта он больше не влияет напрямую
+(их даёт ground-truth check-run'ы).
 
 ## Контракт с пинами вызывателя (канон toolchain-pins)
 

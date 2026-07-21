@@ -33,14 +33,14 @@ scripts/devbox-session.sh <scope>  # вход агентом: ставит OMNIF
 
 | Scope | Path | Что |
 |---|---|---|
-| `skeleton` | `packages/` + `.github/workflows/` | repo-skeleton продукт: пресеты, reusable CI, init/drift (`briefs/repo-skeleton-product.md`) |
+| `skeleton` | `packages/` + `.github/workflows/` | repo-skeleton продукт: пресеты, reusable CI, init/drift (канон → knowledger: `DEVOPSER-2` «Skeleton», ADR `ADR-4` «артефакты-не-сервис») |
 | `registry` | `registry/` | реестр портов/продуктов/маршрутов |
 | `workstation` | `workstation/` | provisioning dev-машины (bootstrap + карта репо) |
 | `hub-core` | `hub-core/` + `stacks/gateway/` | ядро хаба: реестр (скан манифестов) → дверь (nginx+лендинг). Потребитель = `omnifield-hub` (`briefs/hub-core-design.md`, `feedback-hub-core-as-hub-under-isolation.md`) |
 
 Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-driven, ревизия user —
-`briefs/devops-consolidated-backlog.md` v2): зона стека появляется только под точечный заказ
-продукта-потребителя.
+канон → knowledger ADR `ADR-6` «Стеки needs-driven»): зона стека появляется только под
+точечный заказ продукта-потребителя.
 
 ## POLICY (priority 0, из commons)
 
@@ -58,7 +58,7 @@ Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-
   секцию секретов; гейт — gitleaks-шаг reusable CI.
 - **Машина = cattle, containers-only** (канон user 2026-07-10): на тачке — только Docker
   и файлы; тулчейн/git/сессии — в devbox-контейнере. Поставил что-то на хост руками →
-  нарушение канона (`briefs/containers-only-and-management.md`); версии декларируют
+  нарушение канона (канон → knowledger: FUND `FUND-4` «Containers-only», DEVOPSER `DEVOPSER-3` «Devbox»); версии декларируют
   пины репо (`.python-version`, `packageManager`) — исполняются внутри контейнера.
 - ⚠️ Изменение портов/маршрутов = **контракт** (потребители: brainer, writer, оракул) —
   только через architect + запись в `registry/`.

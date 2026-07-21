@@ -308,44 +308,82 @@ export function expectsChecks(requiredChecks) {
   return false;
 }
 
-// Ждём зелёные checks. Три исхода различаем ЯВНО (DEVOPSER-115 — догфуд land -114 вскрыл, что
-// сразу после `pr` проверки ещё НЕ зарегистрированы и старый код путал их с реальным fail'ом):
-//  • code 0                      → все проверки зелёные → return.
-//  • маркер «no checks reported» → проверки ЕЩЁ не зарегистрированы (транзиент; появятся через
-//    секунды) → ждём с ОТДЕЛЬНЫМ капом на регистрацию (CHECKS_REG_TRIES), не бесконечно. По
-//    исчерпании капа решает requiredChecks: пресет ждёт проверки (from-stack|непустой) а их нет →
-//    внятный throw (ожидаемое не пришло); пресет проверок не ждёт → «no checks» = успех, return.
-//  • code 8 (pending)            → проверки есть, идут → ждём (CHECKS_TRIES).
-//  • иначе                       → проверки есть, но не зелёные → throw (реальный fail; не ослабляем).
-// Маркер ловим по СТРОКЕ вывода gh, НЕ по exit-code: gh отдаёт «no checks» generic-кодом (не 8),
-// неотличимым по числу от реального fail'а (сверено: gh 2.96 «no checks reported on the '<branch>'»).
+// Состояние строки `gh pr checks` (колонка 2, tab-sep): зелёные / в процессе / всё прочее = провал.
+const CHECK_GREEN = /^(pass|skipping|neutral|success)$/i;
+const CHECK_PENDING = /^(pending|queued|in_progress|waiting|requested)$/i;
+
+// Вывод `gh pr checks` («name\tstate\t…») → map ТОЛЬКО stack-CI-чек → состояние. Не-stack-CI
+// (CodeQL default-setup, pr-title, инфра) отбрасывает isStackCiCheck — land гейтится тем же
+// набором, что и merge (required-контексты ruleset после DEVOPSER-138). Дедуп по имени (gh может
+// продублировать строку в out и err). Строка «no checks reported» табов не несёт (cols<2) → в map
+// не попадает → трактуется как «ещё не зарегистрированы».
+function stackCiStates(text) {
+  const states = new Map();
+  for (const line of text.split("\n")) {
+    const cols = line.split("\t");
+    if (cols.length < 2) continue;
+    const name = cols[0].trim();
+    if (name && isStackCiCheck(name)) states.set(name, cols[1].trim());
+  }
+  return states;
+}
+
+// Ждём зелёные ОЖИДАЕМЫЕ stack-CI checks (DEVOPSER-139/140: land симметричен merge — гейт тем же
+// набором, что required_status_checks ruleset'а; не-required чеки CodeQL/pr-title/инфра НЕ держат
+// land). `expected` = ожидаемые stack-контексты (из ruleset, см. expectedStackChecks) — ждём КАЖДЫЙ
+// present И green, не «все присутствующие» (иначе мульти-стек-гонка -140: сиблинг-джоб ещё не
+// зарегистрирован → ранний return). `expected` пуст (свежий репо без ruleset) → фолбэк на
+// присутствующие stack-CI (поведение -139). Исходы:
+//  • среди УЖЕ present ожидаемых есть НЕ green и НЕ pending → реальный fail → throw (не ослабляем,
+//    не маскируем не-зарегистрированным сиблингом).
+//  • не все ожидаемые present (сиблинг не зарегистрирован) ИЛИ ни одного stack-CI → ждём с капом на
+//    регистрацию (CHECKS_REG_TRIES). По исчерпании решает expectsChecks: пресет ждёт — throw; не
+//    ждёт — отсутствие = успех (DEVOPSER-115).
+//  • все ожидаемые present, есть pending → ждём (CHECKS_TRIES).
+//  • все ожидаемые present+green → return.
 const CHECKS_TRIES = 60;
 const CHECKS_INTERVAL_S = 10;
 const CHECKS_REG_TRIES = 12; // отдельный кап на РЕГИСТРАЦИЮ проверок (≈2 мин), не бесконечно.
-const NO_CHECKS_RE = /no checks reported/i;
-export function waitChecks(exec, requiredChecks) {
-  let reg = 0; // сколько итераций подряд видели «no checks reported» — кап на регистрацию.
+export function waitChecks(exec, requiredChecks, expected = []) {
+  let reg = 0; // итераций подряд с недо-регистрированным ожидаемым набором — кап на регистрацию.
   for (let i = 0; i < CHECKS_TRIES; i++) {
     const r = exec.gh(["pr", "checks"]);
-    if (r.code === 0) return; // все зелёные
-    if (NO_CHECKS_RE.test(`${r.out}\n${r.err}`)) {
+    const states = stackCiStates(`${r.out}\n${r.err}`);
+    // Известен ожидаемый набор (ruleset — тот же гейт, что merge) → гейтим по НЕМУ; неизвестен →
+    // фолбэк на присутствующие stack-CI (поведение -139).
+    const gate = expected.length ? expected : [...states.keys()];
+
+    // Реальный fail среди УЖЕ present ожидаемых → сразу throw (не ждём не-зарегистрированный сиблинг).
+    const failed = gate
+      .filter((c) => states.has(c))
+      .filter((c) => !CHECK_GREEN.test(states.get(c)) && !CHECK_PENDING.test(states.get(c)));
+    if (failed.length)
+      throw new Error(
+        `stack-CI checks не зелёные:\n${failed.map((c) => `${c}\t${states.get(c)}`).join("\n")}`,
+      );
+
+    // Не все ожидаемые present (или gate пуст = ни одного stack-CI) → ещё не зарегистрированы.
+    const missing = gate.filter((c) => !states.has(c));
+    if (gate.length === 0 || missing.length) {
       if (++reg > CHECKS_REG_TRIES) {
         if (expectsChecks(requiredChecks))
           throw new Error(
-            `checks: ожидаемые проверки (${JSON.stringify(requiredChecks)}) не зарегистрировались за кап — «no checks reported» на PR.`,
+            `checks: stack-CI проверки (${JSON.stringify(expected.length ? expected : requiredChecks)}) не зарегистрировались за кап — не все ожидаемые stack-контексты present на PR.`,
           );
-        return; // пресет проверок не ждёт → отсутствие проверок = успех.
+        return; // пресет проверок не ждёт → отсутствие = успех (DEVOPSER-115).
       }
-      exec.log("[git-flow] проверки ещё не зарегистрированы — ждём…");
+      exec.log("[git-flow] ожидаемые stack-CI проверки ещё не зарегистрированы — ждём…");
       exec.sleep(CHECKS_INTERVAL_S);
       continue;
     }
-    if (r.code === 8) {
-      exec.log("[git-flow] checks pending — ждём…");
+
+    // Все ожидаемые present, никто не упал. Остались pending?
+    if (gate.some((c) => CHECK_PENDING.test(states.get(c)))) {
+      exec.log("[git-flow] stack-CI checks pending — ждём…");
       exec.sleep(CHECKS_INTERVAL_S);
       continue;
     }
-    throw new Error(`checks не зелёные:\n${(r.out || r.err).trim()}`);
+    return; // каждый ожидаемый present+green
   }
   throw new Error("checks не дождались зелёного (timeout).");
 }
@@ -357,10 +395,28 @@ function syncMain(exec, { dry } = {}) {
   exec.log("[git-flow] local main = origin/main.");
 }
 
+// Ожидаемые stack-CI контексты = required_status_checks ЖИВОГО ruleset'а omnifield-git-flow — тот
+// же набор, что гейтит merge (DEVOPSER-140: land = зеркало merge-гейта, DRY, единый источник). Нет
+// ruleset (свежий репо) → [] → waitChecks фолбэчит на присутствующие stack-CI (поведение -139).
+// Фильтр isStackCiCheck — защитно (в required by construction только stack-CI после -138).
+function expectedStackChecks(exec) {
+  const nwo = repoNwo(exec);
+  const list = JSON.parse(read(exec, "gh", ["api", `repos/${nwo}/rulesets`], "rulesets") || "[]");
+  const existing = list.find((r) => r.name === RULESET_NAME);
+  if (!existing) return [];
+  const rs = JSON.parse(
+    read(exec, "gh", ["api", `repos/${nwo}/rulesets/${existing.id}`], "ruleset") || "{}",
+  );
+  const rule = (rs.rules || []).find((r) => r.type === "required_status_checks");
+  return (rule?.parameters?.required_status_checks ?? [])
+    .map((c) => c.context)
+    .filter(isStackCiCheck);
+}
+
 async function land(exec, preset, _flags, { dry }) {
   const branch = assertNotMain(currentBranch(exec), preset.frame);
   if (preset.frame.prRequired) requireOpenPr(exec);
-  waitChecks(exec, preset.defaults.requiredChecks);
+  waitChecks(exec, preset.defaults.requiredChecks, expectedStackChecks(exec));
   mutate(exec, dry, "gh", ["pr", "merge", mergeFlag(preset.defaults.merge), "--delete-branch"]);
   exec.log(`[git-flow] ${branch}: merge (${preset.defaults.merge}) + ветка удалена.`);
   syncMain(exec, { dry });
@@ -376,10 +432,19 @@ function repoNwo(exec) {
   );
 }
 
-// Required-контексты = РЕАЛЬНЫЕ имена check-run'ов default-ветки (ground truth; DEVOPSER-117).
-// GitHub именует проверки reusable-caller'ов '<job> / <inner-job-name>', голых ключей job'а нет —
-// поэтому берём фактические check-run'ы, а не ключи ci.yml. Самокорректируется, не завязано на
-// внутренности reusable. Прогонов ещё нет → пусто (звонящий делает loud-warn, не молча ключи).
+// Каллер-джобы skeleton stack-CI — зеркалит template.json ci.jobs[*].name (+ init.mjs CI_JOB):
+// go→"go", node→"node", frontend→"web". GitHub именует check-run reusable-caller'а
+// "<caller-job> / <inner-job>" — ТОЛЬКО они субстантивны (сборка/тест/drift per stack) и годятся
+// в required. CodeQL default-setup ("Analyze (…)"), pr-title/semantic и прочая инфра этого
+// stack-префикса НЕ несут → в required не попадают by construction.
+const STACK_CI_JOBS = ["go", "node", "web"];
+export const isStackCiCheck = (name) => STACK_CI_JOBS.some((job) => name.startsWith(`${job} / `));
+
+// Required-контексты = РЕАЛЬНЫЕ имена stack-CI check-run'ов default-ветки (ground truth,
+// DEVOPSER-117), СУЖЕННЫЕ до stack-CI (DEVOPSER-138). GitHub именует проверки reusable-caller'ов
+// '<job> / <inner-job-name>', голых ключей job'а нет — берём фактические check-run'ы (не ключи
+// ci.yml, самокорректируется), но оставляем лишь stack-CI (isStackCiCheck): CodeQL/pr-title/инфра
+// отсеиваются, их флейк не блокирует мерж. Прогонов ещё нет → пусто (звонящий делает loud-warn).
 function resolveCheckRunNames(exec, nwo) {
   const branch = read(
     exec,
@@ -398,7 +463,8 @@ function resolveCheckRunNames(exec, nwo) {
       names
         .split("\n")
         .map((s) => s.trim())
-        .filter(Boolean),
+        .filter(Boolean)
+        .filter(isStackCiCheck), // сузить до stack-CI: CodeQL/pr-title/инфра — не required (DEVOPSER-138)
     ),
   ];
 }
