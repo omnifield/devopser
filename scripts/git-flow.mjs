@@ -376,10 +376,19 @@ function repoNwo(exec) {
   );
 }
 
-// Required-контексты = РЕАЛЬНЫЕ имена check-run'ов default-ветки (ground truth; DEVOPSER-117).
-// GitHub именует проверки reusable-caller'ов '<job> / <inner-job-name>', голых ключей job'а нет —
-// поэтому берём фактические check-run'ы, а не ключи ci.yml. Самокорректируется, не завязано на
-// внутренности reusable. Прогонов ещё нет → пусто (звонящий делает loud-warn, не молча ключи).
+// Каллер-джобы skeleton stack-CI — зеркалит template.json ci.jobs[*].name (+ init.mjs CI_JOB):
+// go→"go", node→"node", frontend→"web". GitHub именует check-run reusable-caller'а
+// "<caller-job> / <inner-job>" — ТОЛЬКО они субстантивны (сборка/тест/drift per stack) и годятся
+// в required. CodeQL default-setup ("Analyze (…)"), pr-title/semantic и прочая инфра этого
+// stack-префикса НЕ несут → в required не попадают by construction.
+const STACK_CI_JOBS = ["go", "node", "web"];
+export const isStackCiCheck = (name) => STACK_CI_JOBS.some((job) => name.startsWith(`${job} / `));
+
+// Required-контексты = РЕАЛЬНЫЕ имена stack-CI check-run'ов default-ветки (ground truth,
+// DEVOPSER-117), СУЖЕННЫЕ до stack-CI (DEVOPSER-138). GitHub именует проверки reusable-caller'ов
+// '<job> / <inner-job-name>', голых ключей job'а нет — берём фактические check-run'ы (не ключи
+// ci.yml, самокорректируется), но оставляем лишь stack-CI (isStackCiCheck): CodeQL/pr-title/инфра
+// отсеиваются, их флейк не блокирует мерж. Прогонов ещё нет → пусто (звонящий делает loud-warn).
 function resolveCheckRunNames(exec, nwo) {
   const branch = read(
     exec,
@@ -398,7 +407,8 @@ function resolveCheckRunNames(exec, nwo) {
       names
         .split("\n")
         .map((s) => s.trim())
-        .filter(Boolean),
+        .filter(Boolean)
+        .filter(isStackCiCheck), // сузить до stack-CI: CodeQL/pr-title/инфра — не required (DEVOPSER-138)
     ),
   ];
 }
