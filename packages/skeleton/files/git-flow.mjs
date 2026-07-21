@@ -328,46 +328,62 @@ function stackCiStates(text) {
   return states;
 }
 
-// Ждём зелёные STACK-CI checks (DEVOPSER-139: land симметричен merge — не-required чеки
-// CodeQL/pr-title/инфра НЕ держат land, их флейк не подвешивает приземление; вторая половина -138).
-// Исходы:
-//  • ни одного stack-CI-чека → ЕЩЁ не зарегистрированы (транзиент после `pr`, или «no checks
-//    reported») → ждём с капом на регистрацию (CHECKS_REG_TRIES). По исчерпании решает
-//    expectsChecks: пресет ждёт проверки а их нет → throw; не ждёт → отсутствие = успех (DEVOPSER-115).
-//  • все stack-CI зелёные (pass/skipping) → return (не-stack чеки игнорируем).
-//  • есть stack-CI pending (и нет упавших) → ждём (CHECKS_TRIES).
-//  • есть stack-CI НЕ зелёный и НЕ pending → реальный fail → throw (не ослабляем).
+// Ждём зелёные ОЖИДАЕМЫЕ stack-CI checks (DEVOPSER-139/140: land симметричен merge — гейт тем же
+// набором, что required_status_checks ruleset'а; не-required чеки CodeQL/pr-title/инфра НЕ держат
+// land). `expected` = ожидаемые stack-контексты (из ruleset, см. expectedStackChecks) — ждём КАЖДЫЙ
+// present И green, не «все присутствующие» (иначе мульти-стек-гонка -140: сиблинг-джоб ещё не
+// зарегистрирован → ранний return). `expected` пуст (свежий репо без ruleset) → фолбэк на
+// присутствующие stack-CI (поведение -139). Исходы:
+//  • среди УЖЕ present ожидаемых есть НЕ green и НЕ pending → реальный fail → throw (не ослабляем,
+//    не маскируем не-зарегистрированным сиблингом).
+//  • не все ожидаемые present (сиблинг не зарегистрирован) ИЛИ ни одного stack-CI → ждём с капом на
+//    регистрацию (CHECKS_REG_TRIES). По исчерпании решает expectsChecks: пресет ждёт — throw; не
+//    ждёт — отсутствие = успех (DEVOPSER-115).
+//  • все ожидаемые present, есть pending → ждём (CHECKS_TRIES).
+//  • все ожидаемые present+green → return.
 const CHECKS_TRIES = 60;
 const CHECKS_INTERVAL_S = 10;
 const CHECKS_REG_TRIES = 12; // отдельный кап на РЕГИСТРАЦИЮ проверок (≈2 мин), не бесконечно.
-export function waitChecks(exec, requiredChecks) {
-  let reg = 0; // итераций подряд без единого stack-CI-чека — кап на регистрацию.
+export function waitChecks(exec, requiredChecks, expected = []) {
+  let reg = 0; // итераций подряд с недо-регистрированным ожидаемым набором — кап на регистрацию.
   for (let i = 0; i < CHECKS_TRIES; i++) {
     const r = exec.gh(["pr", "checks"]);
     const states = stackCiStates(`${r.out}\n${r.err}`);
-    if (states.size === 0) {
+    // Известен ожидаемый набор (ruleset — тот же гейт, что merge) → гейтим по НЕМУ; неизвестен →
+    // фолбэк на присутствующие stack-CI (поведение -139).
+    const gate = expected.length ? expected : [...states.keys()];
+
+    // Реальный fail среди УЖЕ present ожидаемых → сразу throw (не ждём не-зарегистрированный сиблинг).
+    const failed = gate
+      .filter((c) => states.has(c))
+      .filter((c) => !CHECK_GREEN.test(states.get(c)) && !CHECK_PENDING.test(states.get(c)));
+    if (failed.length)
+      throw new Error(
+        `stack-CI checks не зелёные:\n${failed.map((c) => `${c}\t${states.get(c)}`).join("\n")}`,
+      );
+
+    // Не все ожидаемые present (или gate пуст = ни одного stack-CI) → ещё не зарегистрированы.
+    const missing = gate.filter((c) => !states.has(c));
+    if (gate.length === 0 || missing.length) {
       if (++reg > CHECKS_REG_TRIES) {
         if (expectsChecks(requiredChecks))
           throw new Error(
-            `checks: stack-CI проверки (${JSON.stringify(requiredChecks)}) не зарегистрировались за кап — на PR нет ни одного stack-CI-чека.`,
+            `checks: stack-CI проверки (${JSON.stringify(expected.length ? expected : requiredChecks)}) не зарегистрировались за кап — не все ожидаемые stack-контексты present на PR.`,
           );
-        return; // пресет проверок не ждёт → отсутствие = успех.
+        return; // пресет проверок не ждёт → отсутствие = успех (DEVOPSER-115).
       }
-      exec.log("[git-flow] stack-CI проверки ещё не зарегистрированы — ждём…");
+      exec.log("[git-flow] ожидаемые stack-CI проверки ещё не зарегистрированы — ждём…");
       exec.sleep(CHECKS_INTERVAL_S);
       continue;
     }
-    const notGreen = [...states].filter(([, s]) => !CHECK_GREEN.test(s));
-    if (notGreen.length === 0) return; // все stack-CI зелёные
-    const failed = notGreen.filter(([, s]) => !CHECK_PENDING.test(s));
-    if (failed.length === 0) {
+
+    // Все ожидаемые present, никто не упал. Остались pending?
+    if (gate.some((c) => CHECK_PENDING.test(states.get(c)))) {
       exec.log("[git-flow] stack-CI checks pending — ждём…");
       exec.sleep(CHECKS_INTERVAL_S);
       continue;
     }
-    throw new Error(
-      `stack-CI checks не зелёные:\n${failed.map(([n, s]) => `${n}\t${s}`).join("\n")}`,
-    );
+    return; // каждый ожидаемый present+green
   }
   throw new Error("checks не дождались зелёного (timeout).");
 }
@@ -379,10 +395,28 @@ function syncMain(exec, { dry } = {}) {
   exec.log("[git-flow] local main = origin/main.");
 }
 
+// Ожидаемые stack-CI контексты = required_status_checks ЖИВОГО ruleset'а omnifield-git-flow — тот
+// же набор, что гейтит merge (DEVOPSER-140: land = зеркало merge-гейта, DRY, единый источник). Нет
+// ruleset (свежий репо) → [] → waitChecks фолбэчит на присутствующие stack-CI (поведение -139).
+// Фильтр isStackCiCheck — защитно (в required by construction только stack-CI после -138).
+function expectedStackChecks(exec) {
+  const nwo = repoNwo(exec);
+  const list = JSON.parse(read(exec, "gh", ["api", `repos/${nwo}/rulesets`], "rulesets") || "[]");
+  const existing = list.find((r) => r.name === RULESET_NAME);
+  if (!existing) return [];
+  const rs = JSON.parse(
+    read(exec, "gh", ["api", `repos/${nwo}/rulesets/${existing.id}`], "ruleset") || "{}",
+  );
+  const rule = (rs.rules || []).find((r) => r.type === "required_status_checks");
+  return (rule?.parameters?.required_status_checks ?? [])
+    .map((c) => c.context)
+    .filter(isStackCiCheck);
+}
+
 async function land(exec, preset, _flags, { dry }) {
   const branch = assertNotMain(currentBranch(exec), preset.frame);
   if (preset.frame.prRequired) requireOpenPr(exec);
-  waitChecks(exec, preset.defaults.requiredChecks);
+  waitChecks(exec, preset.defaults.requiredChecks, expectedStackChecks(exec));
   mutate(exec, dry, "gh", ["pr", "merge", mergeFlag(preset.defaults.merge), "--delete-branch"]);
   exec.log(`[git-flow] ${branch}: merge (${preset.defaults.merge}) + ветка удалена.`);
   syncMain(exec, { dry });
