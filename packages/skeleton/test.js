@@ -27,6 +27,7 @@ import {
   diffRulesets,
   dispatch,
   expectsChecks,
+  isStackCiCheck,
   mergeFlag,
   resolvePreset,
   validateBranchName,
@@ -1057,6 +1058,39 @@ test("git-flow rulesets: required-контексты = РЕАЛЬНЫЕ check-ru
     "desired = реальные check-run имена",
   );
   await assert.rejects(dispatch(["rulesets"], ex, GIT_PRESET, {}), /дрейф против git-пресета/);
+});
+
+test("git-flow rulesets: isStackCiCheck — stack-CI true, CodeQL/pr-title/инфра false (DEVOPSER-138)", () => {
+  for (const ok of ["node / Node (hygiene + nx …)", "go / Go (build·vet·test)", "web / Web (build)"])
+    assert.equal(isStackCiCheck(ok), true, `stack-CI: ${ok}`);
+  for (const no of ["Analyze (javascript-typescript)", "Analyze (actions)", "pr-title", "CodeQL"])
+    assert.equal(isStackCiCheck(no), false, `не stack-CI: ${no}`);
+});
+
+test("git-flow rulesets: check-runs с CodeQL+pr-title → required = только stack-CI (DEVOPSER-138)", async () => {
+  // default-ветка несёт stack-CI + CodeQL + pr-title; desired обязан взять ЛИШЬ stack-CI —
+  // иначе транзиент CodeQL/инфры блокирует мерж (регресс сужения from-stack).
+  const NOISY = [...REAL_CHECKS, "Analyze (javascript-typescript)", "Analyze (actions)", "pr-title"];
+  const stackOnly = buildRulesetSpec(GIT_PRESET, REAL_CHECKS); // ruleset на GitHub = только stack-CI
+  const ex = mockExec({
+    "gh repo view --json nameWithOwner": { code: 0, out: "o/r\n", err: "" },
+    "gh repo view --json defaultBranchRef": { code: 0, out: "main\n", err: "" },
+    "gh api repos/o/r/commits/main/check-runs": { code: 0, out: `${NOISY.join("\n")}\n`, err: "" },
+    "gh api repos/o/r/rulesets/7": { code: 0, out: JSON.stringify(stackOnly), err: "" },
+    "gh api repos/o/r/rulesets": {
+      code: 0,
+      out: JSON.stringify([{ name: "omnifield-git-flow", id: 7 }]),
+      err: "",
+    },
+  });
+  // чисто: desired (сужен до stack-CI) == ruleset (stack-CI). Не сузили бы → CodeQL в desired → дрейф.
+  await dispatch(["rulesets"], ex, GIT_PRESET, {});
+  assert.ok(ex.calls.log.some((l) => l.includes("совпадает с пресетом")));
+  const reqLog = ex.calls.log.find((l) => l.includes("required checks"));
+  assert.ok(
+    reqLog && !reqLog.includes("Analyze") && !reqLog.includes("pr-title"),
+    "CodeQL/pr-title НЕ в required-контекстах",
+  );
 });
 
 test("git-flow rulesets (check): ruleset с реальными контекстами → чисто (no throw)", async () => {
