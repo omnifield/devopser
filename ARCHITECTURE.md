@@ -1,7 +1,7 @@
 # Architecture — Omnifield Devopser
 
-Repo-local north star. Дисциплина/канон — `omnifield/commons/standards/`. История решений —
-`briefs/` (включая снятые: `infra-migration.md` ⛔).
+Repo-local north star. Дисциплина/канон — `omnifield/commons/standards/`. Канон/история
+решений — knowledger KB (зоны FUND/ADR/MECH/DEVOPSER); `briefs/` — аудируется под ретайр.
 
 ## Что это
 
