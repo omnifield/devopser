@@ -951,6 +951,89 @@ test("git-flow: waitChecks — stack-CI pending при зелёном CodeQL →
   assert.equal(ex.calls.sleep, 1, "ждал именно stack-CI, не вернулся по зелёному CodeQL");
 });
 
+// --- waitChecks: мульти-стек гонка регистрации (DEVOPSER-140) --------------------
+// expected (ожидаемый набор из ruleset) → ждём КАЖДЫЙ present+green, не «все присутствующие».
+const GO = "go / Go (build·vet·test)";
+const WEB = "web / Web (build)";
+
+test("git-flow: waitChecks — мульти-стек: go=pass + web ОТСУТСТВУЕТ → НЕ return, ждёт; web=pass → return (DEVOPSER-140)", () => {
+  const ex = checksExec([
+    { code: 0, out: `${GO}\tpass\t10s\t…\n`, err: "" }, // сиблинг web ещё не зарегистрирован
+    { code: 0, out: `${GO}\tpass\t10s\t…\n${WEB}\tpass\t8s\t…\n`, err: "" },
+  ]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack", [GO, WEB]));
+  assert.equal(ex.calls.sleep, 1, "ждал регистрацию web, не вернулся рано на go=pass");
+});
+
+test("git-flow: waitChecks — мульти-стек: go=pass + web=pending → ждёт (DEVOPSER-140)", () => {
+  const ex = checksExec([
+    { code: 8, out: `${GO}\tpass\t10s\t…\n${WEB}\tpending\t0\t…\n`, err: "" },
+    { code: 0, out: `${GO}\tpass\t10s\t…\n${WEB}\tpass\t8s\t…\n`, err: "" },
+  ]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack", [GO, WEB]));
+  assert.equal(ex.calls.sleep, 1);
+});
+
+test("git-flow: waitChecks — мульти-стек: ожидаемый web=fail → throw (реальный fail не маскируется)", () => {
+  const ex = checksExec([{ code: 1, out: `${GO}\tpass\t…\n${WEB}\tfail\t…\n`, err: "" }]);
+  assert.throws(() => waitChecks(ex, "from-stack", [GO, WEB]), /не зелёные/);
+});
+
+test("git-flow: waitChecks — мульти-стек: не-stack красный + ВСЕ ожидаемые stack green → проходит (гард 139/140)", () => {
+  const ex = checksExec([
+    {
+      code: 1,
+      out: `${GO}\tpass\t…\n${WEB}\tpass\t…\nAnalyze (javascript-typescript)\tfail\t…\n`,
+      err: "",
+    },
+  ]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack", [GO, WEB]));
+  assert.equal(ex.calls.sleep, 0, "все ожидаемые green сразу → без ожидания флейка");
+});
+
+test("git-flow: land — мульти-стек ruleset-ожидание: сиблинг не зарегистрирован → ждёт, не ранний merge (DEVOPSER-140)", async () => {
+  // land берёт expected из ЖИВОГО ruleset (expectedStackChecks): required=[GO,WEB]. checks сперва
+  // только GO → ждёт; затем оба → merge. Проверяет сквозную проводку (источник A).
+  const ruleset = {
+    rules: [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: GO }, { context: WEB }] } }],
+  };
+  let checks = 0;
+  const ex = {
+    calls: { git: [], gh: [], log: [], sleep: 0 },
+    git: (a) => {
+      ex.calls.git.push(a.join(" "));
+      return a.join(" ").startsWith("rev-parse --abbrev-ref")
+        ? { code: 0, out: "feat/x\n", err: "" }
+        : { code: 0, out: "", err: "" };
+    },
+    gh: (a) => {
+      const s = a.join(" ");
+      ex.calls.gh.push(s);
+      if (s.startsWith("pr view")) return { code: 0, out: "OPEN\n", err: "" };
+      if (s.startsWith("repo view --json nameWithOwner")) return { code: 0, out: "o/r\n", err: "" };
+      if (s === "api repos/o/r/rulesets")
+        return { code: 0, out: JSON.stringify([{ name: "omnifield-git-flow", id: 5 }]), err: "" };
+      if (s === "api repos/o/r/rulesets/5") return { code: 0, out: JSON.stringify(ruleset), err: "" };
+      if (s === "pr checks")
+        return checks++ === 0
+          ? { code: 0, out: `${GO}\tpass\t10s\t…\n`, err: "" } // web ещё нет → land ждёт
+          : { code: 0, out: `${GO}\tpass\t10s\t…\n${WEB}\tpass\t8s\t…\n`, err: "" };
+      return { code: 0, out: "", err: "" };
+    },
+    sleep: () => {
+      ex.calls.sleep++;
+    },
+    log: (m) => ex.calls.log.push(m),
+  };
+  await dispatch(["land"], ex, GIT_PRESET, {});
+  const flag = mergeFlag(GIT_PRESET.defaults.merge);
+  assert.ok(
+    ex.calls.gh.some((c) => c === `pr merge ${flag} --delete-branch`),
+    "домержил ПОСЛЕ регистрации сиблинга web",
+  );
+  assert.ok(ex.calls.sleep >= 1, "ждал web (не ранний merge на go=pass) — гонка закрыта");
+});
+
 test("git-flow: land — «no checks reported» транзиент → дожидается → merge (регрессия -115)", async () => {
   // Интеграция через dispatch(land): PR OPEN, checks сначала «no checks», затем зелёные → merge.
   let n = 0;
