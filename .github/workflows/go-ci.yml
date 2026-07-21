@@ -82,7 +82,7 @@ jobs:
       # снимает (канон каденции, не костыль под конкретный репо).
       - name: golangci-lint
         if: steps.pkgs.outputs.has == 'true'
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.1.6
           install-mode: goinstall
