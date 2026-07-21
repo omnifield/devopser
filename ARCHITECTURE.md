@@ -16,7 +16,7 @@ Devopser обслуживает все продукты экосистемы (в
 1. **workstation** — новая машина: **Docker, точка** (containers-only канон, user
    2026-07-10): тулчейн/git/Claude-сессии — в devbox-контейнере, файлы — bind-mount;
    пины репо исполняются внутри контейнера.
-2. **repo-skeleton** (`briefs/repo-skeleton-product.md`, порядок D1 → D3 → D2):
+2. **repo-skeleton** (канон → knowledger: DEVOPSER `DEVOPSER-2`, ADR `ADR-4`; порядок D1 → D3 → D2):
    reusable CI → init-материализация + drift-check → пресет-пакеты `@omnifield/*`
    (исходники в `packages/`, publish — GitHub Packages; решение user 2026-07-09).
 3. Потребители переключаются с in-repo копий мелкими PR.
