@@ -39,8 +39,8 @@ scripts/devbox-session.sh <scope>  # вход агентом: ставит OMNIF
 | `hub-core` | `hub-core/` + `stacks/gateway/` | ядро хаба: реестр (скан манифестов) → дверь (nginx+лендинг). Потребитель = `omnifield-hub` (`briefs/hub-core-design.md`, `feedback-hub-core-as-hub-under-isolation.md`) |
 
 Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-driven, ревизия user —
-`briefs/devops-consolidated-backlog.md` v2): зона стека появляется только под точечный заказ
-продукта-потребителя.
+канон → knowledger ADR `ADR-6` «Стеки needs-driven»): зона стека появляется только под
+точечный заказ продукта-потребителя.
 
 ## POLICY (priority 0, из commons)
 
