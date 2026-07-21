@@ -92,6 +92,67 @@ test("backend без reach — валиден", () => {
   assert.equal(res.success, true);
 });
 
+test("UI-вход: fullstack без /<name> (только /api/name) — fail", () => {
+  const res = ProductManifest.safeParse({
+    apiVersion: "omnifield.dev/v1",
+    name: "brainer",
+    type: "fullstack",
+    reach: { routes: [{ path: "/api/brainer", port: 8010 }] },
+  });
+  assert.equal(res.success, false);
+  assert.ok(
+    res.error?.issues.some((i) => String(i.message).includes("UI-вход")),
+    "ожидали loud fail про UI-вход",
+  );
+});
+
+test("UI-вход: UI-путь повешен под /api/ — fail", () => {
+  // единственный UI-маршрут = /api/weber → нет /<name>-входа → fail
+  const res = ProductManifest.safeParse({
+    apiVersion: "omnifield.dev/v1",
+    name: "weber",
+    type: "frontend",
+    reach: { routes: [{ path: "/api/weber", port: 5173 }] },
+  });
+  assert.equal(res.success, false);
+  assert.ok(res.error?.issues.some((i) => i.path.includes("routes")));
+});
+
+test("UI-вход: корректный fullstack (/name + /api/name) — pass", () => {
+  const res = ProductManifest.safeParse({
+    apiVersion: "omnifield.dev/v1",
+    name: "brainer",
+    type: "fullstack",
+    reach: {
+      routes: [
+        { path: "/brainer", port: 3500 },
+        { path: "/api/brainer", port: 8010 },
+      ],
+    },
+  });
+  assert.equal(res.success, true);
+});
+
+test("UI-вход: трейлинг-слеш /<name>/ тоже принимается", () => {
+  const res = ProductManifest.safeParse({
+    apiVersion: "omnifield.dev/v1",
+    name: "weber",
+    type: "frontend",
+    reach: { routes: [{ path: "/weber/", port: 5173 }] },
+  });
+  assert.equal(res.success, true);
+});
+
+test("UI-вход: backend-only (только /api/, type≠fullstack/frontend) — pass", () => {
+  const res = ProductManifest.safeParse({
+    apiVersion: "omnifield.dev/v1",
+    name: "lang-svc",
+    type: "backend",
+    reach: { routes: [{ path: "/api/lang-svc", port: 8020 }] },
+  });
+  assert.equal(res.success, true);
+});
+
 test("apiVersion пинит мажор: чужой apiVersion — ошибка", () => {
   const res = ProductManifest.safeParse({
     apiVersion: "omnifield.dev/v2",

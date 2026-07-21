@@ -51,13 +51,34 @@ export const ProductManifest = z
   })
   .strict() // ← лишний ключ = ошибка. Утечку расширенного ловит валидатор, не память.
   .superRefine((m, ctx) => {
+    const hasUi = m.type === "frontend" || m.type === "fullstack";
+
     // reach обязателен для того, что вообще ходит через дверь
-    if ((m.type === "frontend" || m.type === "fullstack") && !m.reach) {
+    if (hasUi && !m.reach) {
       ctx.addIssue({
         code: "custom",
         path: ["reach"],
         message: `type '${m.type}' обязан объявить reach.routes`,
       });
+    }
+
+    // Канон UI-входа (knowledger ADR-9 «Фуллстек-UI-вход»): продукт с UI отдаёт
+    // его на /<name>/, НЕ через /api/. Дверь ведёт на UI-префикс; /api/ — только API.
+    // Отсутствие /<name>-маршрута (в т.ч. когда UI повешен под /api/) = loud fail.
+    if (hasUi && m.reach) {
+      const uiEntry = `/${m.name}`;
+      const hasUiEntry = m.reach.routes.some(
+        (r) => r.path === uiEntry || r.path === `${uiEntry}/`,
+      );
+      if (!hasUiEntry) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["reach", "routes"],
+          message:
+            `type '${m.type}' обязан отдавать UI-вход на '${uiEntry}/' (маршрут вне /api/) — ` +
+            `UI под /api/ запрещён, /api/ только для API (knowledger ADR-9)`,
+        });
+      }
     }
   });
 
