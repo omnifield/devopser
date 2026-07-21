@@ -308,44 +308,66 @@ export function expectsChecks(requiredChecks) {
   return false;
 }
 
-// Ждём зелёные checks. Три исхода различаем ЯВНО (DEVOPSER-115 — догфуд land -114 вскрыл, что
-// сразу после `pr` проверки ещё НЕ зарегистрированы и старый код путал их с реальным fail'ом):
-//  • code 0                      → все проверки зелёные → return.
-//  • маркер «no checks reported» → проверки ЕЩЁ не зарегистрированы (транзиент; появятся через
-//    секунды) → ждём с ОТДЕЛЬНЫМ капом на регистрацию (CHECKS_REG_TRIES), не бесконечно. По
-//    исчерпании капа решает requiredChecks: пресет ждёт проверки (from-stack|непустой) а их нет →
-//    внятный throw (ожидаемое не пришло); пресет проверок не ждёт → «no checks» = успех, return.
-//  • code 8 (pending)            → проверки есть, идут → ждём (CHECKS_TRIES).
-//  • иначе                       → проверки есть, но не зелёные → throw (реальный fail; не ослабляем).
-// Маркер ловим по СТРОКЕ вывода gh, НЕ по exit-code: gh отдаёт «no checks» generic-кодом (не 8),
-// неотличимым по числу от реального fail'а (сверено: gh 2.96 «no checks reported on the '<branch>'»).
+// Состояние строки `gh pr checks` (колонка 2, tab-sep): зелёные / в процессе / всё прочее = провал.
+const CHECK_GREEN = /^(pass|skipping|neutral|success)$/i;
+const CHECK_PENDING = /^(pending|queued|in_progress|waiting|requested)$/i;
+
+// Вывод `gh pr checks` («name\tstate\t…») → map ТОЛЬКО stack-CI-чек → состояние. Не-stack-CI
+// (CodeQL default-setup, pr-title, инфра) отбрасывает isStackCiCheck — land гейтится тем же
+// набором, что и merge (required-контексты ruleset после DEVOPSER-138). Дедуп по имени (gh может
+// продублировать строку в out и err). Строка «no checks reported» табов не несёт (cols<2) → в map
+// не попадает → трактуется как «ещё не зарегистрированы».
+function stackCiStates(text) {
+  const states = new Map();
+  for (const line of text.split("\n")) {
+    const cols = line.split("\t");
+    if (cols.length < 2) continue;
+    const name = cols[0].trim();
+    if (name && isStackCiCheck(name)) states.set(name, cols[1].trim());
+  }
+  return states;
+}
+
+// Ждём зелёные STACK-CI checks (DEVOPSER-139: land симметричен merge — не-required чеки
+// CodeQL/pr-title/инфра НЕ держат land, их флейк не подвешивает приземление; вторая половина -138).
+// Исходы:
+//  • ни одного stack-CI-чека → ЕЩЁ не зарегистрированы (транзиент после `pr`, или «no checks
+//    reported») → ждём с капом на регистрацию (CHECKS_REG_TRIES). По исчерпании решает
+//    expectsChecks: пресет ждёт проверки а их нет → throw; не ждёт → отсутствие = успех (DEVOPSER-115).
+//  • все stack-CI зелёные (pass/skipping) → return (не-stack чеки игнорируем).
+//  • есть stack-CI pending (и нет упавших) → ждём (CHECKS_TRIES).
+//  • есть stack-CI НЕ зелёный и НЕ pending → реальный fail → throw (не ослабляем).
 const CHECKS_TRIES = 60;
 const CHECKS_INTERVAL_S = 10;
 const CHECKS_REG_TRIES = 12; // отдельный кап на РЕГИСТРАЦИЮ проверок (≈2 мин), не бесконечно.
-const NO_CHECKS_RE = /no checks reported/i;
 export function waitChecks(exec, requiredChecks) {
-  let reg = 0; // сколько итераций подряд видели «no checks reported» — кап на регистрацию.
+  let reg = 0; // итераций подряд без единого stack-CI-чека — кап на регистрацию.
   for (let i = 0; i < CHECKS_TRIES; i++) {
     const r = exec.gh(["pr", "checks"]);
-    if (r.code === 0) return; // все зелёные
-    if (NO_CHECKS_RE.test(`${r.out}\n${r.err}`)) {
+    const states = stackCiStates(`${r.out}\n${r.err}`);
+    if (states.size === 0) {
       if (++reg > CHECKS_REG_TRIES) {
         if (expectsChecks(requiredChecks))
           throw new Error(
-            `checks: ожидаемые проверки (${JSON.stringify(requiredChecks)}) не зарегистрировались за кап — «no checks reported» на PR.`,
+            `checks: stack-CI проверки (${JSON.stringify(requiredChecks)}) не зарегистрировались за кап — на PR нет ни одного stack-CI-чека.`,
           );
-        return; // пресет проверок не ждёт → отсутствие проверок = успех.
+        return; // пресет проверок не ждёт → отсутствие = успех.
       }
-      exec.log("[git-flow] проверки ещё не зарегистрированы — ждём…");
+      exec.log("[git-flow] stack-CI проверки ещё не зарегистрированы — ждём…");
       exec.sleep(CHECKS_INTERVAL_S);
       continue;
     }
-    if (r.code === 8) {
-      exec.log("[git-flow] checks pending — ждём…");
+    const notGreen = [...states].filter(([, s]) => !CHECK_GREEN.test(s));
+    if (notGreen.length === 0) return; // все stack-CI зелёные
+    const failed = notGreen.filter(([, s]) => !CHECK_PENDING.test(s));
+    if (failed.length === 0) {
+      exec.log("[git-flow] stack-CI checks pending — ждём…");
       exec.sleep(CHECKS_INTERVAL_S);
       continue;
     }
-    throw new Error(`checks не зелёные:\n${(r.out || r.err).trim()}`);
+    throw new Error(
+      `stack-CI checks не зелёные:\n${failed.map(([n, s]) => `${n}\t${s}`).join("\n")}`,
+    );
   }
   throw new Error("checks не дождались зелёного (timeout).");
 }
