@@ -33,7 +33,7 @@ jobs:
         run: |
           TAG="${{ inputs.tag }}"
           echo "value=${TAG:-v$(date -u +%Y.%m.%d)}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: devbox
           push: true
