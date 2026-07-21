@@ -58,7 +58,7 @@ Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-
   секцию секретов; гейт — gitleaks-шаг reusable CI.
 - **Машина = cattle, containers-only** (канон user 2026-07-10): на тачке — только Docker
   и файлы; тулчейн/git/сессии — в devbox-контейнере. Поставил что-то на хост руками →
-  нарушение канона (`briefs/containers-only-and-management.md`); версии декларируют
+  нарушение канона (канон → knowledger: FUND `FUND-4` «Containers-only», DEVOPSER `DEVOPSER-3` «Devbox»); версии декларируют
   пины репо (`.python-version`, `packageManager`) — исполняются внутри контейнера.
 - ⚠️ Изменение портов/маршрутов = **контракт** (потребители: brainer, writer, оракул) —
   только через architect + запись в `registry/`.
