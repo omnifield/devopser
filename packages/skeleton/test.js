@@ -27,6 +27,7 @@ import {
   diffRulesets,
   dispatch,
   expectsChecks,
+  isStackCiCheck,
   mergeFlag,
   resolvePreset,
   validateBranchName,
@@ -859,7 +860,7 @@ test("git-flow: land-оркестрация по пресету (PR OPEN + check
   const ex = mockExec({
     "git rev-parse --abbrev-ref HEAD": { code: 0, out: "feat/x\n", err: "" },
     "gh pr view": { code: 0, out: "OPEN\n", err: "" },
-    "gh pr checks": { code: 0, out: "", err: "" },
+    "gh pr checks": { code: 0, out: "node / Node (ci)\tpass\t21s\thttps://…\n", err: "" },
   });
   await dispatch(["land"], ex, GIT_PRESET, {});
   // merge-флаг из пресета (squash), + удаление ветки.
@@ -890,9 +891,11 @@ test("git-flow: expectsChecks — from-stack/непустой → true, пуст
 });
 
 const NO_CHECKS = { code: 1, out: "", err: "no checks reported on the 'feat/x' branch\n" };
-const GREEN = { code: 0, out: "", err: "" };
-const PENDING = { code: 8, out: "", err: "" };
-const FAILED = { code: 1, out: "build\tfail\thttps://…\n", err: "" };
+// waitChecks гейтится по stack-CI-чекам (DEVOPSER-139) — мок несёт строку `gh pr checks`
+// (name\tstate\t…) со stack-CI-именем "node / Node …".
+const GREEN = { code: 0, out: "node / Node (ci)\tpass\t21s\thttps://…\n", err: "" };
+const PENDING = { code: 8, out: "node / Node (ci)\tpending\t0\thttps://…\n", err: "" };
+const FAILED = { code: 1, out: "node / Node (ci)\tfail\thttps://…\n", err: "" };
 
 test("git-flow: waitChecks — «no checks reported» транзиент → ждёт → зелёные (НЕ падает)", () => {
   // Догфуд-баг: land сразу после pr падал на «no checks reported». Теперь ждём регистрации.
@@ -921,6 +924,114 @@ test("git-flow: waitChecks — «no checks» навсегда + пресет Ж�
 test("git-flow: waitChecks — «no checks» навсегда + пресет чеков НЕ ждёт → успех (return)", () => {
   const ex = checksExec([NO_CHECKS]);
   assert.doesNotThrow(() => waitChecks(ex, [])); // пустой набор → «no checks» = ок
+});
+
+test("git-flow: waitChecks — красный/pending НЕ-stack (CodeQL, pr-title) + зелёный stack-CI → проходит (DEVOPSER-139)", () => {
+  // Инфра-флейк (CodeQL fail, pr-title pending) не держит land — гейт по stack-CI, симметрично merge.
+  const NOISY_GREEN = {
+    code: 1, // gh отдаёт non-zero из-за красного CodeQL — но это НЕ stack-CI-чек
+    out:
+      "node / Node (ci)\tpass\t21s\thttps://…\n" +
+      "Analyze (javascript-typescript)\tfail\t8s\thttps://…\n" +
+      "pr-title\tpending\t0\thttps://…\n",
+    err: "",
+  };
+  const ex = checksExec([NOISY_GREEN]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack"), "не-stack чеки не держат land");
+  assert.equal(ex.calls.sleep, 0, "stack-CI зелёный сразу → без ожидания флейка");
+});
+
+test("git-flow: waitChecks — stack-CI pending при зелёном CodeQL → ждёт stack-CI (не ранний return)", () => {
+  // Обратная сторона: зелёный не-stack чек НЕ должен давать ранний return, пока stack-CI не зелёный.
+  const ex = checksExec([
+    { code: 8, out: "node / Node (ci)\tpending\t0\t…\nCodeQL\tpass\t3s\t…\n", err: "" },
+    { code: 0, out: "node / Node (ci)\tpass\t20s\t…\nCodeQL\tpass\t3s\t…\n", err: "" },
+  ]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack"));
+  assert.equal(ex.calls.sleep, 1, "ждал именно stack-CI, не вернулся по зелёному CodeQL");
+});
+
+// --- waitChecks: мульти-стек гонка регистрации (DEVOPSER-140) --------------------
+// expected (ожидаемый набор из ruleset) → ждём КАЖДЫЙ present+green, не «все присутствующие».
+const GO = "go / Go (build·vet·test)";
+const WEB = "web / Web (build)";
+
+test("git-flow: waitChecks — мульти-стек: go=pass + web ОТСУТСТВУЕТ → НЕ return, ждёт; web=pass → return (DEVOPSER-140)", () => {
+  const ex = checksExec([
+    { code: 0, out: `${GO}\tpass\t10s\t…\n`, err: "" }, // сиблинг web ещё не зарегистрирован
+    { code: 0, out: `${GO}\tpass\t10s\t…\n${WEB}\tpass\t8s\t…\n`, err: "" },
+  ]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack", [GO, WEB]));
+  assert.equal(ex.calls.sleep, 1, "ждал регистрацию web, не вернулся рано на go=pass");
+});
+
+test("git-flow: waitChecks — мульти-стек: go=pass + web=pending → ждёт (DEVOPSER-140)", () => {
+  const ex = checksExec([
+    { code: 8, out: `${GO}\tpass\t10s\t…\n${WEB}\tpending\t0\t…\n`, err: "" },
+    { code: 0, out: `${GO}\tpass\t10s\t…\n${WEB}\tpass\t8s\t…\n`, err: "" },
+  ]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack", [GO, WEB]));
+  assert.equal(ex.calls.sleep, 1);
+});
+
+test("git-flow: waitChecks — мульти-стек: ожидаемый web=fail → throw (реальный fail не маскируется)", () => {
+  const ex = checksExec([{ code: 1, out: `${GO}\tpass\t…\n${WEB}\tfail\t…\n`, err: "" }]);
+  assert.throws(() => waitChecks(ex, "from-stack", [GO, WEB]), /не зелёные/);
+});
+
+test("git-flow: waitChecks — мульти-стек: не-stack красный + ВСЕ ожидаемые stack green → проходит (гард 139/140)", () => {
+  const ex = checksExec([
+    {
+      code: 1,
+      out: `${GO}\tpass\t…\n${WEB}\tpass\t…\nAnalyze (javascript-typescript)\tfail\t…\n`,
+      err: "",
+    },
+  ]);
+  assert.doesNotThrow(() => waitChecks(ex, "from-stack", [GO, WEB]));
+  assert.equal(ex.calls.sleep, 0, "все ожидаемые green сразу → без ожидания флейка");
+});
+
+test("git-flow: land — мульти-стек ruleset-ожидание: сиблинг не зарегистрирован → ждёт, не ранний merge (DEVOPSER-140)", async () => {
+  // land берёт expected из ЖИВОГО ruleset (expectedStackChecks): required=[GO,WEB]. checks сперва
+  // только GO → ждёт; затем оба → merge. Проверяет сквозную проводку (источник A).
+  const ruleset = {
+    rules: [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: GO }, { context: WEB }] } }],
+  };
+  let checks = 0;
+  const ex = {
+    calls: { git: [], gh: [], log: [], sleep: 0 },
+    git: (a) => {
+      ex.calls.git.push(a.join(" "));
+      return a.join(" ").startsWith("rev-parse --abbrev-ref")
+        ? { code: 0, out: "feat/x\n", err: "" }
+        : { code: 0, out: "", err: "" };
+    },
+    gh: (a) => {
+      const s = a.join(" ");
+      ex.calls.gh.push(s);
+      if (s.startsWith("pr view")) return { code: 0, out: "OPEN\n", err: "" };
+      if (s.startsWith("repo view --json nameWithOwner")) return { code: 0, out: "o/r\n", err: "" };
+      if (s === "api repos/o/r/rulesets")
+        return { code: 0, out: JSON.stringify([{ name: "omnifield-git-flow", id: 5 }]), err: "" };
+      if (s === "api repos/o/r/rulesets/5") return { code: 0, out: JSON.stringify(ruleset), err: "" };
+      if (s === "pr checks")
+        return checks++ === 0
+          ? { code: 0, out: `${GO}\tpass\t10s\t…\n`, err: "" } // web ещё нет → land ждёт
+          : { code: 0, out: `${GO}\tpass\t10s\t…\n${WEB}\tpass\t8s\t…\n`, err: "" };
+      return { code: 0, out: "", err: "" };
+    },
+    sleep: () => {
+      ex.calls.sleep++;
+    },
+    log: (m) => ex.calls.log.push(m),
+  };
+  await dispatch(["land"], ex, GIT_PRESET, {});
+  const flag = mergeFlag(GIT_PRESET.defaults.merge);
+  assert.ok(
+    ex.calls.gh.some((c) => c === `pr merge ${flag} --delete-branch`),
+    "домержил ПОСЛЕ регистрации сиблинга web",
+  );
+  assert.ok(ex.calls.sleep >= 1, "ждал web (не ранний merge на go=pass) — гонка закрыта");
 });
 
 test("git-flow: land — «no checks reported» транзиент → дожидается → merge (регрессия -115)", async () => {
@@ -1057,6 +1168,39 @@ test("git-flow rulesets: required-контексты = РЕАЛЬНЫЕ check-ru
     "desired = реальные check-run имена",
   );
   await assert.rejects(dispatch(["rulesets"], ex, GIT_PRESET, {}), /дрейф против git-пресета/);
+});
+
+test("git-flow rulesets: isStackCiCheck — stack-CI true, CodeQL/pr-title/инфра false (DEVOPSER-138)", () => {
+  for (const ok of ["node / Node (hygiene + nx …)", "go / Go (build·vet·test)", "web / Web (build)"])
+    assert.equal(isStackCiCheck(ok), true, `stack-CI: ${ok}`);
+  for (const no of ["Analyze (javascript-typescript)", "Analyze (actions)", "pr-title", "CodeQL"])
+    assert.equal(isStackCiCheck(no), false, `не stack-CI: ${no}`);
+});
+
+test("git-flow rulesets: check-runs с CodeQL+pr-title → required = только stack-CI (DEVOPSER-138)", async () => {
+  // default-ветка несёт stack-CI + CodeQL + pr-title; desired обязан взять ЛИШЬ stack-CI —
+  // иначе транзиент CodeQL/инфры блокирует мерж (регресс сужения from-stack).
+  const NOISY = [...REAL_CHECKS, "Analyze (javascript-typescript)", "Analyze (actions)", "pr-title"];
+  const stackOnly = buildRulesetSpec(GIT_PRESET, REAL_CHECKS); // ruleset на GitHub = только stack-CI
+  const ex = mockExec({
+    "gh repo view --json nameWithOwner": { code: 0, out: "o/r\n", err: "" },
+    "gh repo view --json defaultBranchRef": { code: 0, out: "main\n", err: "" },
+    "gh api repos/o/r/commits/main/check-runs": { code: 0, out: `${NOISY.join("\n")}\n`, err: "" },
+    "gh api repos/o/r/rulesets/7": { code: 0, out: JSON.stringify(stackOnly), err: "" },
+    "gh api repos/o/r/rulesets": {
+      code: 0,
+      out: JSON.stringify([{ name: "omnifield-git-flow", id: 7 }]),
+      err: "",
+    },
+  });
+  // чисто: desired (сужен до stack-CI) == ruleset (stack-CI). Не сузили бы → CodeQL в desired → дрейф.
+  await dispatch(["rulesets"], ex, GIT_PRESET, {});
+  assert.ok(ex.calls.log.some((l) => l.includes("совпадает с пресетом")));
+  const reqLog = ex.calls.log.find((l) => l.includes("required checks"));
+  assert.ok(
+    reqLog && !reqLog.includes("Analyze") && !reqLog.includes("pr-title"),
+    "CodeQL/pr-title НЕ в required-контекстах",
+  );
 });
 
 test("git-flow rulesets (check): ruleset с реальными контекстами → чисто (no throw)", async () => {
