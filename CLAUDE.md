@@ -33,7 +33,7 @@ scripts/devbox-session.sh <scope>  # вход агентом: ставит OMNIF
 
 | Scope | Path | Что |
 |---|---|---|
-| `skeleton` | `packages/` + `.github/workflows/` | repo-skeleton продукт: пресеты, reusable CI, init/drift (`briefs/repo-skeleton-product.md`) |
+| `skeleton` | `packages/` + `.github/workflows/` | repo-skeleton продукт: пресеты, reusable CI, init/drift (канон → knowledger: `DEVOPSER-2` «Skeleton», ADR `ADR-4` «артефакты-не-сервис») |
 | `registry` | `registry/` | реестр портов/продуктов/маршрутов |
 | `workstation` | `workstation/` | provisioning dev-машины (bootstrap + карта репо) |
 | `hub-core` | `hub-core/` + `stacks/gateway/` | ядро хаба: реестр (скан манифестов) → дверь (nginx+лендинг). Потребитель = `omnifield-hub` (`briefs/hub-core-design.md`, `feedback-hub-core-as-hub-under-isolation.md`) |
