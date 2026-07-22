@@ -26,8 +26,26 @@ scripts/devbox-session.sh <scope>  # вход агентом: ставит OMNIF
 | **architect** (main) | триаж, контракты, координация, **брифы** (`briefs/`), ревью | полный |
 | **owner-\<zone\>** | зона + тесты + доки | commit-only (gate) |
 
-- Architect НЕ пишет код зон — брифы → owner-сессии (user запускает). Owner НЕ пишет
-  cross-zone / контракты — упёрлось → STOP + эскалация к architect. Эскалация ВВЕРХ.
+- Architect НЕ пишет код зон — **ТЗ в tasker** (нода `DEVOPSER-<n>`) → owner-сессии (user
+  запускает). Owner НЕ пишет cross-zone / контракты — упёрлось → STOP + эскалация к architect.
+  Эскалация ВВЕРХ.
+
+## Системы — где ТЗ и канон (доступ)
+
+Задачи и знания живут в общих сервисах Omnifield (соседи по docker-сети; auth — заголовок
+`Authorization: Bearer <handle>`, любой осмысленный handle, напр. `devopser`, пишется как actor).
+⚠️ **Нативный префикс обязателен** (`/tasker/`, `/knowledger/`) — голый `:8030/`/`:8040/` даёт 404.
+
+- **tasker** — задачи/ТЗ. База `http://tasker:8030/tasker/…`, workspace `DEVOPSER`.
+  Твоя ТЗ = нода `DEVOPSER-<n>`: `curl -s -H "Authorization: Bearer devopser"
+  http://tasker:8030/tasker/nodes/DEVOPSER-<n>`. Owner берёт ТЗ из ноды сам; architect туда
+  её пишет; прогресс — через ноду (`PATCH status_id` / `POST …/activity`). Дерево ws —
+  `GET /tasker/workspaces/DEVOPSER/nodes`. Контракт — `omnifield/tasker` `docs/api.md` (через `gh`).
+- **knowledger** — канон/база знаний. База `http://knowledger:8040/knowledger/…`. Зоны
+  FUND (концепт «что») / ADR (рационал «почему») / MECH (реестр мех) + продуктовый раздел
+  `DEVOPSER` («как с X»). Читать: `GET /knowledger/workspaces/DEVOPSER/tree`. Продукт пишет
+  в чужие зоны предложкой (accept-gate), в свою `DEVOPSER` — напрямую. Контракт —
+  `omnifield/knowledger` `docs/api.md`.
 
 ## Зоны
 
