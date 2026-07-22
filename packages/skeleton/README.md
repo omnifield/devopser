@@ -142,9 +142,9 @@ Zero-dep — шелл `git`+`gh`.
 | `commit <msg>` | коммит | `defaults.commitConvention` (валидация; сабж со строчной `^[a-zа-яё]` — Latin ИЛИ кириллица, зеркало CI `pr-title.yml`, DEVOPSER-130) · `frame.mainProtected` (блок коммита в main) |
 | `push` | push ветки в origin | `frame.mainProtected` |
 | `pr [--title --body]` | открыть PR (`gh`, `--base main`); ВСЕГДА валидный non-interactive вызов — title И body удовлетворены (недостающее выводится из коммитов ветки, DEVOPSER-129) | — |
-| `land` | зелёные checks → merge → удалить ветку → sync main | `frame.prRequired` (нужен OPEN PR) · `defaults.requiredChecks` · `defaults.merge` |
+| `land` | включает AUTO-MERGE (`gh pr merge --auto`) и возвращается сразу — GitHub домержит по зелёным required-checks + удалит ветку (DEVOPSER-157) | `frame.prRequired` (нужен OPEN PR) · `defaults.merge` |
 | `sync` | локальный `main` = `origin/main` | — |
-| `rulesets [--apply]` | материализует GitHub-rulesets из пресета (дефолт: check-дрейф) | `frame.mainProtected`/`prRequired` · `defaults.requiredChecks` |
+| `rulesets [--apply]` | материализует GitHub-rulesets + repo-settings (squash-only + auto-merge) из пресета (дефолт: check-дрейф) | `frame.mainProtected`/`prRequired` · `defaults.requiredChecks` · `defaults.merge` · `defaults.repoSettings` |
 
 `--dry-run` печатает намеренные мутации (`git`/`gh` write), не выполняя. **agent-agnostic:**
 инструмент про «кого» НЕ знает — ноль owner/ролей/прав/gate; кто вызывает = концерн потребителя.
@@ -156,16 +156,26 @@ Zero-dep — шелл `git`+`gh`.
 
 - `frame.mainProtected` → защита ветки по умолчанию (правила `deletion` + `non_fast_forward`);
 - `frame.prRequired` → правило `pull_request` (мерж только через PR);
-- `defaults.requiredChecks: "from-stack"` → `required_status_checks` с контекстами = **РЕАЛЬНЫМИ
+- `defaults.requiredChecks: "from-stack"` → `required_status_checks` (**strict OFF**, DEVOPSER-157 —
+  auto-merge не требует «ветка up-to-date с base») с контекстами = **РЕАЛЬНЫМИ
   именами check-run'ов default-ветки** (`gh api repos/…/commits/<default>/check-runs` →
   `.check_runs[].name`; DEVOPSER-117). GitHub именует проверки reusable-caller'ов `'<job> / <inner>'`
   (напр. `'go / Go (build·vet·test)'`) — голых ключей job'ов (`go`/`web`) в контекстах НЕТ, поэтому
   ruleset ждёт именно реальные строки, иначе main залочен при зелёных. Ground truth,
-  самокорректируется. Прогонов ещё нет → **loud-warn** (required-checks пуст, не молча ключи).
+  самокорректируется. Прогонов ещё нет → **loud-warn** (required-checks пуст, не молча ключи);
+- `pull_request.required_approving_review_count = 0` (DEVOPSER-157): автор PR не может сам его
+  апрувнуть (GitHub self-approve запрещён), одиночный флоу → потребуй ≥1 ревью и auto-merge застрянет
+  без апрувера. Гейт качества = required-checks, не человеко-ревью.
 
-**`rulesets`** (дефолт) — check: текущие GitHub-rulesets vs desired → **loud-fail при дрейфе**
-(гейт против ручного расхождения). **`rulesets --apply`** — идемпотентный apply через
-`gh api repos/…/rulesets` (`POST` если нет, `PUT` если есть).
+**Repo-settings (DEVOPSER-157).** Auto-merge требует repo-level настроек, которых ruleset не
+покрывает — материализуются тем же `rulesets` (`PATCH repos/{nwo}`): **squash-only** (методы мержа
+дерайвятся из `defaults.merge` — единый источник, `squash` → только `allow_squash_merge`) +
+`allow_auto_merge` (`defaults.repoSettings.autoMerge`, иначе `gh pr merge --auto` падает) +
+`delete_branch_on_merge`. Дрейф repo-settings ловит тот же `rulesets` (check).
+
+**`rulesets`** (дефолт) — check: текущие GitHub-rulesets + repo-settings vs desired → **loud-fail
+при дрейфе** (гейт против ручного расхождения). **`rulesets --apply`** — идемпотентный apply:
+`PATCH repos/…` (repo-settings) + `gh api repos/…/rulesets` (`POST` если нет, `PUT` если есть).
 
 **Admin-токен** (apply меняет настройки репо → нужен scope `administration:write`): **env-инжект**
 (`gh` читает `GH_TOKEN`), секрет **НЕ хардкодится**. `apply` трогает GitHub-настройки — на СВОЁМ
