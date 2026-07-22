@@ -1,7 +1,7 @@
 {
   "name": "@omnifield/nx-preset",
-  "version": "0.1.2",
-  "description": "Omnifield nx-пресет: базовые targetDefaults + namedInputs продукт-репо (briefs/repo-skeleton-product.md D2)",
+  "version": "0.1.3",
+  "description": "Omnifield nx-пресет: базовые targetDefaults + namedInputs продукт-репо (+ pythonSources/test:py/lint:py для node+python, DEVOPSER-159)",
   "omnifield": {
     "kind": "preset",
     "slot": "nx",

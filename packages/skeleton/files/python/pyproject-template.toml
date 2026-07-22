@@ -1,0 +1,32 @@
+# pyproject.toml — omnifield python-канон (SEED, init-only: создаётся если нет, дальше repo-owned;
+# DEVOPSER-159). Промоушен рабочего прототипа brainer. Несёт КОНФИГ-канон (uv-пин + ruff-правила),
+# продуктовые deps НЕ навязывает. uv.lock и исходники — repo-owned (не managed, не drift-check).
+# Трактуется как node трактует biome.json: seed-дефолт, продукт докручивает точечно (не exact).
+[project]
+name = "__NAME__"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.12",
+]
+
+# uv-пин (self-enforcing toolchain-pin, escalation-toolchain-pins §1): CI setup-uv читает его через
+# version-file — единый источник версии uv, не хардкод в воркфлоу.
+[tool.uv]
+required-version = ">=0.11,<0.12"
+package = false
+
+# ruff-канон (brainer-прототип): line-length 120, target py312, набор правил E/F/W/I/UP/B.
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

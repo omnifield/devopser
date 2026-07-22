@@ -1,0 +1,78 @@
+# Reusable CI для python-репо экосистемы (DEVOPSER-159 — промоушен рабочего прототипа brainer:
+# FastAPI+uv, потребитель №1). Зеркалит node-ci.yml/go-ci.yml один-в-один, но для python-пинов.
+# Потребитель держит ~5-строчный caller:
+#   uses: omnifield/devopser/.github/workflows/python-ci.yml@main
+#   with: { packages: '["packages/backend", "packages/kernel"]' }   # uv-workspace; дефолт — корень
+# Сниппеты caller'ов и грабли — README.md рядом.
+#
+# Версия uv — ТОЛЬКО из пина репо-вызывателя (канон toolchain-pins, как go-version-file/node-version):
+#   setup-uv version-file: pyproject.toml → [tool.uv] required-version вызывателя. Никакого хардкода
+#   версии uv здесь (в отличие от локального brainer-job'а — reusable служит ВСЕМ потребителям, у
+#   каждого свой пин). CPython — из .python-version вызывателя (setup-uv её уважает).
+#
+# permissions задаёт CALLER — reusable не может расширить права сам: минимум contents: read
+#   (нужен и для checkout, и для полной истории gitleaks). Python-флоу тянет deps из PyPI (не
+#   @omnifield GitHub Packages) и не гоняет nx-set-shas → actions:read / packages:read здесь НЕ
+#   нужны (в отличие от node-ci).
+name: Python CI (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      packages:
+        description: 'JSON-массив каталогов python-пакетов workspace (каждый — свой прогон uv sync/ruff/pytest); дефолт — корень репо'
+        type: string
+        required: false
+        default: '["."]'
+      drift-check:
+        description: 'Сверка вендоренных skeleton-копий с эталоном devopser (D3); выключать только на переходный период'
+        type: boolean
+        required: false
+        default: true
+      secret-scan:
+        description: 'gitleaks по всей git-истории (репо публичные — токены ловит CI); выключать только с решением architect'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  python:
+    # Один job со steps (как node-ci), но matrix по py-пакетам: пакет без прогона в CI = невидимая
+    # дыра (канон brainer-прототипа). Имя check-run'а reusable-caller'а — '<caller-job> / Python …'.
+    name: Python (ruff + pytest, ${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: ${{ fromJSON(inputs.packages) }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # gitleaks сканит всю историю → полная глубина.
+          fetch-depth: 0
+      # Репо публичные: секреты в вечной истории ловит CI, не глаза. --redact — находки не светятся
+      # в логах. Версия — единая точка пина в composite (DEVOPSER-53), не хардкод здесь. Composite —
+      # uses-шаг: сканит от корня репо (working-directory к нему не применяется). Дедуп между matrix-
+      # ячейками не делаем — каждая ячейка = свежий раннер, скан идемпотентен (read-only).
+      - name: secret-scan (gitleaks)
+        if: ${{ inputs.secret-scan }}
+        uses: omnifield/devopser/.github/actions/gitleaks@main
+      # Версия uv — из пина вызывателя (root pyproject.toml [tool.uv] required-version), не отсюда.
+      # CPython — из .python-version. enable-cache — кэш uv между прогонами.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+      - name: Sync deps (uv + dev group)
+        run: uv sync --dev
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Test (pytest)
+        run: uv run pytest -q
+      # D3: дрейф вендоренных skeleton-копий виден сразу (красный); синк — явной командой init.mjs.
+      # Composite сверяет от корня репо (working-directory не применяется к uses-шагу).
+      - name: skeleton drift-check
+        if: ${{ inputs.drift-check }}
+        uses: omnifield/devopser/.github/actions/drift-check@main

@@ -9,14 +9,16 @@
 //   node init.mjs --check [target]   — drift-check: ничего не пишет, exit 1 + список
 //                                      расхождений (шаг reusable CI, action drift-check).
 //
-// СТЕК репо (node / go / frontend; репо может быть мульти-стек, напр. go+frontend) —
-// источник правды platform/repo-flow.json (поле `stack`), фолбэк — детект по фактам
-// репо (go.mod→go, package.json→node). Ветвление — ПО СТЕКУ, НЕ по имени репо
-// (north-star брифа): go-путь работает для любого go-репо, node — для любого node.
+// СТЕК репо (node / go / frontend / python; репо может быть мульти-стек, напр. go+frontend или
+// node+python — brainer) — источник правды platform/repo-flow.json (поле `stack`), фолбэк — детект
+// по фактам репо (go.mod→go, package.json→node, pyproject.toml|uv.lock→python). Ветвление — ПО
+// СТЕКУ, НЕ по имени репо (north-star брифа): go-путь работает для любого go-репо, node — для любого.
 //   node     = nx-монорепо (pnpm+nx в корне) → node-ci + корневой nx/package/biome-набор.
 //   frontend = standalone-фронт (свой pnpm-воркспейс, vite, БЕЗ nx) → web-ci-caller,
 //              БЕЗ навязывания корневого nx-набора (у фронта свои конфиги в воркспейсе).
 //              working-directory фронта — из repo-flow.json (frontend.working-directory).
+//   python   = uv-репо (FastAPI+uv прототип brainer, DEVOPSER-159) → python-ci-caller +
+//              seed-канон (pyproject ruff/uv-пин + .python-version); аддитивно, полиглот с node.
 //
 // Managed-набор (сверяется drift-check'ом; синк — только явной командой, не молча):
 //   общий (все стеки): .editorconfig / .gitattributes / .npmrc / devbox-* /
@@ -25,9 +27,10 @@
 //         их не тянут, иначе drift-red / падающий хук — DEVOPSER-45) + package.json пины.
 // Init-only (создаются, если отсутствуют; НЕ drift-managed — репо легитимно правит):
 //   общий: .devcontainer / devbox.services.json / CI-caller'ы (ci.yml + pr-title.yml);
-//   node: nx.json / biome.json / dependabot;  go: .golangci.yml / sqlc.yaml.
-// nx.json / biome.json — репо расширяет пресеты (пример: python-таргеты brainer);
-// go-шаблоны — продукт правит пути/движок БД (sqlite→postgres drop-in).
+//   node: nx.json / biome.json / dependabot;  go: .golangci.yml / sqlc.yaml;
+//   python: pyproject.toml (ruff/uv-пин канон) / .python-version — repo-owned, uv.lock тоже.
+// nx.json / biome.json — репо расширяет пресеты (pythonSources/test:py — @omnifield/nx-preset);
+// go-шаблоны — продукт правит пути/движок БД; python-канон — seed (как biome.json, не exact).
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -64,6 +67,7 @@ const PINS = TEMPLATE.pins; // mode pins (package.json merge)
 const COMMON_TEMPLATES = TEMPLATE.templates.common; // mode seed
 const NODE_TEMPLATES = TEMPLATE.templates.node; // mode seed
 const GO_TEMPLATES = TEMPLATE.templates.go; // mode seed
+const PYTHON_TEMPLATES = TEMPLATE.templates.python; // mode seed (DEVOPSER-159)
 const CI_JOB = TEMPLATE.ci.jobs;
 const PERM_ORDER = TEMPLATE.ci.permOrder;
 
@@ -96,6 +100,11 @@ function detectStacks(target) {
   const s = [];
   if (existsSync(join(target, "go.mod"))) s.push("go");
   if (existsSync(join(target, "package.json"))) s.push("node");
+  // python аддитивно + полиглот (DEVOPSER-159): pyproject.toml ИЛИ uv.lock → python. Стеки НЕ
+  // взаимоисключающие — brainer = node+python одновременно (nx-монорепо с py-пакетами). go/node-
+  // детект выше НЕ трогаем.
+  if (existsSync(join(target, "pyproject.toml")) || existsSync(join(target, "uv.lock")))
+    s.push("python");
   if (s.length) return s;
   // Голый репо без объявленного стека (нет go.mod/package.json И нет repo-flow.json[<name>].stack —
   // resolveStacks зовёт detect только без записи). НЕ гадаем МОЛЧА (DEVOPSER-131): молчаливый
@@ -124,7 +133,7 @@ function resolveStacks(target) {
 
 // Сборка ci.yml-caller по стеку: один job на reusable, permissions — объединение канонов.
 // frontend-job передаёт working-directory (сабдир-фронт), если он не корень.
-function buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }) {
+function buildCiYml({ hasGo, hasNode, hasFrontend, hasPython, frontendWorkdir }) {
   const jobs = [];
   const perms = new Set(["contents: read"]);
   if (hasGo) jobs.push(CI_JOB.go);
@@ -137,6 +146,10 @@ function buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }) {
     jobs.push({ ...CI_JOB.frontend, workdir: frontendWorkdir });
     perms.add("packages: read"); // фронт может тянуть @omnifield-пресет (web-ci auth)
   }
+  // python-контур (DEVOPSER-159): deps из PyPI (не @omnifield Packages) + нет nx-set-shas →
+  // сверх contents:read прав не требует. Дефолтная matrix python-ci = корень (["."]); uv-workspace-
+  // репо докручивает `with: packages` в своём (init-only) ci.yml.
+  if (hasPython) jobs.push(CI_JOB.python);
   const permStr = PERM_ORDER.filter((p) => perms.has(p)).join(", ");
   const head = readEtalon("ci-caller/head.yml").replace("__PERMISSIONS__", permStr);
   const body = jobs
@@ -492,6 +505,7 @@ function main() {
   const hasNode = stacks.includes("node");
   const hasGo = stacks.includes("go");
   const hasFrontend = stacks.includes("frontend");
+  const hasPython = stacks.includes("python");
   const frontendWorkdir = entry?.frontend?.["working-directory"] ?? ".";
   console.log(`[skeleton] стек: [${stacks.join(", ")}] (${source})`);
   const drift = [];
@@ -506,7 +520,12 @@ function main() {
   const ctx = { target, check, drift, actions, name, tokens };
   const seed = check
     ? []
-    : [...COMMON_TEMPLATES, ...(hasNode ? NODE_TEMPLATES : []), ...(hasGo ? GO_TEMPLATES : [])];
+    : [
+        ...COMMON_TEMPLATES,
+        ...(hasNode ? NODE_TEMPLATES : []),
+        ...(hasGo ? GO_TEMPLATES : []),
+        ...(hasPython ? PYTHON_TEMPLATES : []),
+      ];
   // MANAGED тоже фильтруется по стеку (DEVOPSER-45): .husky/* — node-only (nx-хуки), не всем стекам.
   const frame = [
     ...MANAGED.filter((e) => inStack(e, stacks)),
@@ -521,7 +540,7 @@ function main() {
   if (!check) {
     const ciPath = join(target, ".github/workflows/ci.yml");
     if (!existsSync(ciPath)) {
-      writeLf(ciPath, buildCiYml({ hasGo, hasNode, hasFrontend, frontendWorkdir }));
+      writeLf(ciPath, buildCiYml({ hasGo, hasNode, hasFrontend, hasPython, frontendWorkdir }));
       actions.push(".github/workflows/ci.yml: создан (caller per stack)");
     }
     const prPath = join(target, ".github/workflows/pr-title.yml");
