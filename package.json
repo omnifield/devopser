@@ -19,7 +19,7 @@
     "skeleton:sync": "node packages/skeleton/init.mjs ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.3",
+    "@biomejs/biome": "^2.5.5",
     "@omnifield/biome-preset": "workspace:*",
     "@omnifield/nx-preset": "workspace:*",
     "husky": "^9.1.7",
