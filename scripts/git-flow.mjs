@@ -377,11 +377,11 @@ function repoNwo(exec) {
 }
 
 // Каллер-джобы skeleton stack-CI — зеркалит template.json ci.jobs[*].name (+ init.mjs CI_JOB):
-// go→"go", node→"node", frontend→"web". GitHub именует check-run reusable-caller'а
-// "<caller-job> / <inner-job>" — ТОЛЬКО они субстантивны (сборка/тест/drift per stack) и годятся
-// в required. CodeQL default-setup ("Analyze (…)"), pr-title/semantic и прочая инфра этого
-// stack-префикса НЕ несут → в required не попадают by construction.
-const STACK_CI_JOBS = ["go", "node", "web"];
+// go→"go", node→"node", frontend→"web", python→"python" (DEVOPSER-159). GitHub именует check-run
+// reusable-caller'а "<caller-job> / <inner-job>" — ТОЛЬКО они субстантивны (сборка/тест/drift per
+// stack) и годятся в required. CodeQL default-setup ("Analyze (…)"), pr-title/semantic и прочая
+// инфра этого stack-префикса НЕ несут → в required не попадают by construction.
+const STACK_CI_JOBS = ["go", "node", "web", "python"];
 export const isStackCiCheck = (name) => STACK_CI_JOBS.some((job) => name.startsWith(`${job} / `));
 
 // Required-контексты = РЕАЛЬНЫЕ имена stack-CI check-run'ов default-ветки (ground truth,

@@ -58,14 +58,18 @@ test("template.json объявляет managed-набор непустым, ка
   }
 });
 
-test("template.json объявляет per-stack templates (common/node/go) и CI-jobs (go/node/frontend)", () => {
+test("template.json объявляет per-stack templates (common/node/go/python) и CI-jobs (go/node/frontend/python)", () => {
   assert.ok(Array.isArray(TEMPLATE.templates.common));
   assert.ok(Array.isArray(TEMPLATE.templates.node));
   assert.ok(Array.isArray(TEMPLATE.templates.go));
-  for (const s of ["go", "node", "frontend"]) {
+  assert.ok(Array.isArray(TEMPLATE.templates.python), "python-шаблоны объявлены (DEVOPSER-159)");
+  for (const s of ["go", "node", "frontend", "python"]) {
     assert.equal(typeof TEMPLATE.ci.jobs[s].name, "string");
     assert.equal(typeof TEMPLATE.ci.jobs[s].reusable, "string");
   }
+  // python-caller → python-ci.yml (job-имя 'python' → check-run 'python / …', stack-CI git-flow).
+  assert.equal(TEMPLATE.ci.jobs.python.name, "python");
+  assert.equal(TEMPLATE.ci.jobs.python.reusable, "python-ci.yml");
 });
 
 test("init.mjs ЧИТАЕТ template.json, а не хардкодит рамку (extract, не rewrite)", () => {
@@ -145,6 +149,98 @@ test("init (go-стек): go-templates из манифеста созданы, g
   }
 });
 
+// --- DEVOPSER-159: first-class python-стек (детект + полиглот + backward-compat) ----------
+
+test("init (python-стек): pyproject.toml → детект python (без warn), py-templates + python-caller", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "pyproject.toml"), "[project]\nname = 'x'\n"); // → detectStacks → ['python']
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /стек: \[python\]/, "pyproject → стек python");
+    assert.doesNotMatch(r.stderr, /стек.*не объявлен/i, "объявленный py-стек → без WARN про стек");
+    // seed-канон python из манифеста.
+    for (const { dest } of TEMPLATE.templates.python)
+      assert.ok(existsSync(join(repo, dest)), `python init-only ${dest} создан`);
+    const pv = readFileSync(join(repo, ".python-version"), "utf8").trim();
+    assert.equal(pv, "3.12", ".python-version = 3.12 (канон brainer)");
+    const ci = readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8");
+    assert.match(ci, /python-ci\.yml/, "ci.yml несёт python-caller");
+    // python-репо не тянет node-пресеты (nx/biome) — стеки разведены.
+    assert.ok(!existsSync(join(repo, "nx.json")), "python-only без nx.json");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("init (python-стек): uv.lock тоже детектит python (без pyproject у детекта нет записи)", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "uv.lock"), "version = 1\n"); // uv.lock → python
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /стек: \[python\]/, "uv.lock → стек python");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("init (полиглот node+python): pyproject + package.json → ОБА стека, ОБА caller'а (DEVOPSER-159)", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "package.json"), '{ "name": "x" }\n');
+    writeFileSync(join(repo, "pyproject.toml"), "[project]\nname = 'x'\n");
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /стек: \[node, python\]/, "полиглот node+python (стеки не взаимоисключают)");
+    const ci = readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8");
+    assert.match(ci, /node-ci\.yml/, "ci.yml несёт node-caller");
+    assert.match(ci, /python-ci\.yml/, "ci.yml несёт python-caller");
+    // node-набор (nx/biome) присутствует; python-канон тоже.
+    assert.ok(existsSync(join(repo, "nx.json")), "node-часть → nx.json");
+    assert.ok(existsSync(join(repo, "pyproject.toml")), "python-часть → pyproject.toml");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("backward-compat: go-only не тянет python (ни pyproject-seed, ни python-caller); drift чист", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "go.mod"), "module x\n"); // go-only
+    assert.equal(run(repo).status, 0);
+    // go детект НЕ создаёт pyproject.toml (иначе следующий прогон ложно детектил бы python).
+    for (const { dest } of TEMPLATE.templates.python)
+      assert.ok(!existsSync(join(repo, dest)), `go-only без python-seed ${dest}`);
+    const ci = readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8");
+    assert.doesNotMatch(ci, /python-ci\.yml/, "go-only ci.yml без python-caller");
+    assert.equal(run(repo, "--check").status, 0, "go-only drift чист (python аддитивен)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("backward-compat: node-only не тянет python-caller/seed", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0); // пустой → node-дефолт
+    const ci = readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8");
+    assert.doesNotMatch(ci, /python-ci\.yml/, "node-only ci.yml без python-caller");
+    assert.ok(!existsSync(join(repo, ".python-version")), "node-only без .python-version");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("python seed-канон: pyproject-шаблон несёт ruff-правила + uv-пин (промоушен факта brainer)", () => {
+  const tpl = readFileSync(join(PKG_DIR, "files/python/pyproject-template.toml"), "utf8");
+  assert.match(tpl, /\[tool\.ruff\]/, "ruff-конфиг присутствует");
+  assert.match(tpl, /line-length\s*=\s*120/, "ruff line-length 120 (канон brainer)");
+  assert.match(tpl, /target-version\s*=\s*"py312"/, "ruff target py312");
+  assert.match(tpl, /select\s*=\s*\[.*"E".*"F".*"W".*"I".*"UP".*"B".*\]/, "ruff select E/F/W/I/UP/B");
+  assert.match(tpl, /required-version/, "uv-пин (toolchain-pin, читается version-file'ом CI)");
+});
+
 // --- DEVOPSER-44/45: devcontainer IDE-канон + стек-чистота (ноль node-утечек в go) --------
 
 const REPO_ROOT = join(PKG_DIR, "..", "..");
@@ -218,7 +314,7 @@ test("frontend-devcontainer: pnpm-воркдир из repo-flow (не хардк
 
 // --- DEVOPSER-53: gitleaks — единая точка пина, composite вместо 6× inline-curl ------------
 
-const CI_WORKFLOWS = ["web-ci.yml", "node-ci.yml", "go-ci.yml"];
+const CI_WORKFLOWS = ["web-ci.yml", "node-ci.yml", "go-ci.yml", "python-ci.yml"];
 
 test("gitleaks: 3 reusable-воркфлоу зовут composite (ноль inline-curl-пина) — DEVOPSER-53", () => {
   for (const wf of CI_WORKFLOWS) {
@@ -372,6 +468,7 @@ const allFrameEntries = () => [
   ...TEMPLATE.templates.common,
   ...TEMPLATE.templates.node,
   ...TEMPLATE.templates.go,
+  ...TEMPLATE.templates.python,
 ];
 
 test("каждая frame-запись объявляет валидный mode (exact|seed|block|pins)", () => {
@@ -383,7 +480,7 @@ test("каждая frame-запись объявляет валидный mode (
     TEMPLATE.managed.every((e) => e.mode === "exact"),
     "managed = exact",
   );
-  for (const g of ["common", "node", "go"])
+  for (const g of ["common", "node", "go", "python"])
     assert.ok(
       TEMPLATE.templates[g].every((e) => e.mode === "seed"),
       `templates.${g} = seed`,
@@ -981,7 +1078,12 @@ test("git-flow rulesets: required-контексты = РЕАЛЬНЫЕ check-ru
 });
 
 test("git-flow rulesets: isStackCiCheck — stack-CI true, CodeQL/pr-title/инфра false (DEVOPSER-138)", () => {
-  for (const ok of ["node / Node (hygiene + nx …)", "go / Go (build·vet·test)", "web / Web (build)"])
+  for (const ok of [
+    "node / Node (hygiene + nx …)",
+    "go / Go (build·vet·test)",
+    "web / Web (build)",
+    "python / Python (ruff + pytest, backend)", // DEVOPSER-159: python-контур = stack-CI (required)
+  ])
     assert.equal(isStackCiCheck(ok), true, `stack-CI: ${ok}`);
   for (const no of ["Analyze (javascript-typescript)", "Analyze (actions)", "pr-title", "CodeQL"])
     assert.equal(isStackCiCheck(no), false, `не stack-CI: ${no}`);

@@ -40,11 +40,15 @@
     "go": [
       { "src": "go/golangci-template.yml", "dest": ".golangci.yml", "mode": "seed" },
       { "src": "go/sqlc-template.yaml", "dest": "sqlc.yaml", "mode": "seed" }
+    ],
+    "python": [
+      { "src": "python/pyproject-template.toml", "dest": "pyproject.toml", "mode": "seed" },
+      { "src": "python/python-version", "dest": ".python-version", "mode": "seed" }
     ]
   },
   "presets": {
     "$comment": "Биндинг слот → @omnifield/X-preset@^ver (DEVOPSER-98): npm-доставляемые repo-config пресеты (nx/biome/vite) — JS-тул-конфиги, extends'ятся JS-репо. Рамка знает их по name@version (version-guard + consumer-dep drift). git-flow — НЕ здесь: доставляется вендоренным managed-файлом git-flow.json (language-agnostic, DEVOPSER-113), не npm; его метаданные — в git-flow.json.omnifield.",
-    "nx": "@omnifield/nx-preset@^0.1.1",
+    "nx": "@omnifield/nx-preset@^0.1.3",
     "biome": "@omnifield/biome-preset@^0.1.1",
     "vite": "@omnifield/vite-preset@^0.1.0"
   },
@@ -58,7 +62,8 @@
     "jobs": {
       "go": { "name": "go", "reusable": "go-ci.yml" },
       "node": { "name": "node", "reusable": "node-ci.yml" },
-      "frontend": { "name": "web", "reusable": "web-ci.yml" }
+      "frontend": { "name": "web", "reusable": "web-ci.yml" },
+      "python": { "name": "python", "reusable": "python-ci.yml" }
     },
     "permOrder": ["contents: read", "actions: read", "packages: read"]
   }
