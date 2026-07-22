@@ -3,8 +3,8 @@
 Одна дверь на всё (`briefs/gateway-hub-single-origin.md`, заказчик — brainer,
 решение user): в проде всё за nginx — в dev работаем в том же флоу, parity-грабли
 («на портах работало, за прокси нет») ловятся сразу. Прямые порты продуктов —
-внутренняя деталь (nginx targets); source of truth — `registry/ports.md`, из UX
-и доков они уходят.
+внутренняя деталь (nginx targets); source of truth — манифест продукта (`omnifield.yaml`),
+из UX и доков они уходят.
 
 - **Дверь генерится, не пишется руками** (Шаг 5.3, `briefs/hubcore-door-from-registry.md`):
   `hub-core` глобит `omnifield-registry/*.yaml` (publish-volume продуктов) → пишет `nginx.conf`
@@ -28,8 +28,9 @@
   `proxy_pass`) → gateway **стартует, даже когда продукт-devbox ещё не поднят** (и когда
   реестр пуст — дверь валидна-пустая), отвечает 502 до подъёма продукта (ожидаемо, gateway первым).
 - **Новый маршрут продукта** = запись в его `omnifield.yaml` (product-owned) + publish в volume;
-  дверь подхватит регенерацией. Порты/маршруты = контракт `registry/ports.md` (architect-gated),
-  манифесты обязаны conform'ить. Продукт в стек не хардкодим (stack-as-capability).
+  дверь подхватит регенерацией. Порты/маршруты продукта = его манифест (истина там);
+  `registry/ports.md` держит лишь свои хост-порты devopser (:8080/:9443), не данные продуктов.
+  Продукт в стек не хардкодим (stack-as-capability).
 - **Границы**: обычный compose на машине — docker-socket не монтируется, в devbox
   не входит; секретов нет. Капсульный gateway оракула (`capsule/docker/gateway`,
   тоже :8080) — предыдущая эпоха: одновременно не поднимать.
