@@ -86,13 +86,16 @@ Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-
 ## Git-флоу — приземление через инструмент (DEVOPSER-103/115)
 
 - **Все приземления — через `scripts/git-flow.mjs`** (вендоренный, agent-agnostic):
-  `start <type>/<slug>` → `commit <msg>` → `push` → `pr` → `land` (ждёт зелёные checks →
-  squash-merge → удаляет ветку → sync main). Ноль ручных `git`/`gh`-мутаций. **Architect тоже
-  сидит на нём** (пилот tasker подтверждён 2026-07-19).
+  `start <type>/<slug>` → `commit <msg>` → `push` → `pr` → `land`. `land` включает GitHub
+  **auto-merge** (squash, DEVOPSER-157): PR мержится САМ по зелёным required-checks + ветка
+  удаляется (strict OFF — без up-to-date-гейта, BEHIND не залипает). Локальный main — `git-flow
+  sync` после мержа. Ноль ручных `git`/`gh`-мутаций. **Architect тоже сидит на нём** (пилот
+  tasker подтверждён 2026-07-19).
 - **Пресет = единый источник enforcement:** `git-flow.json` (frame: mainProtected+prRequired;
-  defaults: squash, conventional, requiredChecks=from-stack). GitHub-rulesets материализуются
-  из него: `git-flow rulesets [--apply]` (ruleset `omnifield-git-flow`). Ручные rulesets не
-  плодить — правка enforcement идёт через пресет.
+  defaults: squash, conventional, requiredChecks=from-stack, repoSettings: autoMerge+deleteBranchOnMerge).
+  GitHub-rulesets И repo-settings (auto-merge, squash-only, strict OFF, approvals=0) материализуются
+  из него: `git-flow rulesets [--apply]` (ruleset `omnifield-git-flow`; drift-check покрывает оба).
+  Ручные rulesets/repo-settings не плодить — правка enforcement идёт через пресет.
 - Прямой коммит/пуш в main запрещён рамкой (frame.mainProtected) — работай на ветке (`git-flow start`).
 
 ## Git-инфра (harness)
