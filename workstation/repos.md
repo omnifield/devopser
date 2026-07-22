@@ -16,9 +16,12 @@ scripts/devbox.sh up               # провижн своего devbox из .de
 scripts/devbox-session.sh <scope>  # вход агентом: ставит OMNIFIELD_SCOPE + workdir + model-pin
 ```
 
-`<scope>` — `main` (полный git) или `<zone>` (owner, commit-only под git-gate).
-Каталог продуктов/скоупов — `registry/products.md`. Всё дальнейшее (git, клон,
-`pnpm install` / `uv sync`, claude-сессии) — уже ВНУТРИ этого контейнера.
+`<scope>` — `main` (полный git) или `<zone>` (owner, commit-only под git-gate);
+зоны devopser перечислены в его `CLAUDE.md` / `ARCHITECTURE.md`. Каталог продуктов —
+не registry-файл, а **per-product манифесты** (`omnifield.yaml` в репо каждого продукта,
+агрегируются сканом hub-core): продукт самообъявляется, devopser его данные не держит.
+Всё дальнейшее (git, клон, `pnpm install` / `uv sync`, claude-сессии) — уже ВНУТРИ
+этого контейнера.
 
 > ⚠️ **`~/oa <repo> [scope]` — retired-антипаттерн, НЕ вход.** Это был хост-стопгап:
 > `docker exec` в ОДИН devbox (brainer'а) с bind-mount'ом СРАЗУ ВСЕХ репо → из
@@ -67,4 +70,7 @@ projects/new/
    ```
 3. **commons / capsuleTech** — только чтение (канон и оракул), поднимать нечего.
 
-Порты, которые займут стеки/продукты — `registry/ports.md` (source of truth).
+Хост-порты devopser-инфры (`:8080` gateway — единственный хост-контракт всей системы) —
+`registry/ports.md`. Порты продуктов сюда НЕ входят: они внутренние (docker-сеть, апстрим
+по alias = имя репо) и декларируются **манифестом самого продукта** (`reach.routes[].service`),
+не registry-файлом.
