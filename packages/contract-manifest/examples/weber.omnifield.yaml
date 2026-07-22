@@ -3,7 +3,7 @@
 # Тончайший манифест: 3 обязательных поля + reach; spawnEligible/scopes — дефолты.
 # port = РЕАЛЬНЫЙ внутренний listening-порт продукта (weber dev-server слушает 5173).
 # Требование: manifest.reach.port === реальный порт, иначе nginx-upstream промахнётся
-# (port-consistency-gate, devopser). registry/ports.md — человек-зеркало, не «канон номеров».
+# (port-consistency-gate, devopser). Порт живёт здесь, в манифесте продукта, — не в registry-зеркале.
 apiVersion: omnifield.dev/v1
 name: weber
 type: frontend
