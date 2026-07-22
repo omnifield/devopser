@@ -52,7 +52,7 @@ scripts/devbox-session.sh <scope>  # вход агентом: ставит OMNIF
 | Scope | Path | Что |
 |---|---|---|
 | `skeleton` | `packages/` + `.github/workflows/` | repo-skeleton продукт: пресеты, reusable CI, init/drift (канон → knowledger: `DEVOPSER-2` «Skeleton», ADR `ADR-4` «артефакты-не-сервис») |
-| `registry` | `registry/` | реестр портов/продуктов/маршрутов |
+| `registry` | `registry/` | СВОИ хост-порты devopser (`ports.md`: :8080/:9443). Контракты продуктов (identity/маршруты/порты) — в их манифестах; devopser держит механизм (схема `@omnifield/contract-manifest` + скан → зона hub-core), не данные продуктов |
 | `workstation` | `workstation/` | provisioning dev-машины (bootstrap + карта репо) |
 | `hub-core` | `hub-core/` + `stacks/gateway/` | ядро хаба: реестр (скан манифестов) → дверь (nginx+лендинг). Потребитель = `omnifield-hub` (`briefs/hub-core-design.md`, `feedback-hub-core-as-hub-under-isolation.md`) |
 
@@ -67,8 +67,9 @@ Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-
   publish → install с чистой машины; CI: зелёный прогон у потребителя) + доки + registry в актуале.
 - Commit-каденс: этап → проверка → коммит.
 - **stack-as-capability** (ARCHITECTURE): стек самодостаточен, стеки не знают друг о друге,
-  связи — только через `registry/`. Не хардкодить продукт в стек — расширяемся registry-записью.
-  Стек появляется ТОЛЬКО под заказ потребителя.
+  связи — через МАНИФЕСТ продукта (`omnifield.yaml`), агрегируемый сканом (hub-core), НЕ через
+  хардкод продукта в devopser. Продукт самообъявляется — devopser не держит его данные и не
+  костылит инфру под продукт. Стек появляется ТОЛЬКО под заказ потребителя.
 - **Инфра живёт здесь, не в продукт-репо.** Если продукту нужна runtime-инфра — зона devopser,
   брифом сюда, не docker-папкой туда.
 - **Секреты — только env-инжект** (GH Environments / vault devopser): файлы с секретами
@@ -78,8 +79,9 @@ Runtime-стеки (gateway/observability/storage) сняты 2026-07-09 (needs-
   и файлы; тулчейн/git/сессии — в devbox-контейнере. Поставил что-то на хост руками →
   нарушение канона (канон → knowledger: FUND `FUND-4` «Containers-only», DEVOPSER `DEVOPSER-3` «Devbox»); версии декларируют
   пины репо (`.python-version`, `packageManager`) — исполняются внутри контейнера.
-- ⚠️ Изменение портов/маршрутов = **контракт** (потребители: brainer, writer, оракул) —
-  только через architect + запись в `registry/`.
+- ⚠️ Изменение портов/маршрутов ПРОДУКТА = **контракт** — запись в манифесте продукта
+  (`omnifield.yaml`, зона продукта), не в devopser. Свои хост-порты devopser (:8080) —
+  через architect + `registry/ports.md`.
 
 ## Git-флоу — приземление через инструмент (DEVOPSER-103/115)
 
