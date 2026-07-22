@@ -27,6 +27,26 @@ reach:
       port: 8787
 `;
 
+// backend-only: reach лишь /api/ (тип backend — reach не обязателен, но объявлен как API).
+const TASKER = `apiVersion: omnifield.dev/v1
+name: tasker
+type: backend
+title: Tasker
+description: Трекер задач
+reach:
+  routes:
+    - path: /api/tasker
+      port: 8030
+`;
+
+// headless: сервис без reach вовсе (в дверь не ходит).
+const WORKER = `apiVersion: omnifield.dev/v1
+name: worker
+type: service
+title: Worker
+description: Фоновый воркер
+`;
+
 // Стенд: временный registry-volume (вход) + door-volume (выход); чистим за собой.
 function stand(manifests = { "chater.yaml": CHATER }) {
   const root = mkdtempSync(join(tmpdir(), "hubcore-"));
@@ -90,6 +110,71 @@ test("door-volume: пишет nginx.conf + hub/index.html; лендинг = ка
     s.run();
     assert.match(s.landing(), /Chater/, "карточка продукта в лендинге");
     assert.match(s.landing(), /1 продукт/, "счётчик продуктов");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("лендинг: fullstack (/<name>/) — кликабельная карточка ведёт на фронт /<name>/", () => {
+  const s = stand(); // chater = fullstack (front /chater + api /api/chater)
+  try {
+    s.run();
+    const html = s.landing();
+    assert.match(html, /<a class="card" href="\/chater\/">/, "карточка = <a> на фронт /chater/ (без 301-хопа через bare)");
+    assert.doesNotMatch(html, /<div class="card card--headless">/, "fullstack НЕ рендерит headless-карточку");
+    assert.doesNotMatch(html, /href="\/api\/chater/, "клик не ведёт на /api/ у fullstack");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("лендинг: backend-only (reach лишь /api/) — некликабельная headless-карточка, НЕ ведёт на JSON (ADR-9)", () => {
+  const s = stand({ "tasker.yaml": TASKER });
+  try {
+    s.run();
+    const html = s.landing();
+    assert.match(html, /Tasker/, "карточка backend-продукта присутствует");
+    assert.doesNotMatch(html, /<a class="card"[^>]*\/api\/tasker/, "карточка НЕ ссылается на /api/ (не притворяется аппом, не ведёт на JSON)");
+    assert.match(html, /<div class="card card--headless">[\s\S]*?Tasker[\s\S]*?<\/div>/, "backend-only рендерится как некликабельный div.card--headless");
+    assert.match(html, /backend · api/, "явный тег backend/api");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("лендинг: headless без reach (service) — некликабельная карточка, без ссылки и без /api/", () => {
+  const s = stand({ "worker.yaml": WORKER });
+  try {
+    s.run();
+    const html = s.landing();
+    assert.match(html, /<div class="card card--headless">[\s\S]*?Worker[\s\S]*?<\/div>/, "headless = некликабельный div");
+    assert.match(html, /service · headless/, "тег headless для service без reach");
+    assert.doesNotMatch(html, /<a class="card"/, "ни одной кликабельной карточки (нет UI-фронта)");
+  } finally {
+    s.cleanup();
+  }
+});
+
+// DoD-прогон: knowledger объявил /knowledger/ в манифесте → карточка кликается на фронт.
+test("прогон DoD: knowledger (/knowledger/ фронт + /api/knowledger) — карточка на фронт /knowledger/", () => {
+  const KNOWLEDGER = `apiVersion: omnifield.dev/v1
+name: knowledger
+type: fullstack
+title: Knowledger
+description: База знаний
+reach:
+  routes:
+    - path: /knowledger
+      port: 5174
+    - path: /api/knowledger
+      port: 8040
+`;
+  const s = stand({ "knowledger.yaml": KNOWLEDGER });
+  try {
+    s.run();
+    const html = s.landing();
+    assert.match(html, /<a class="card" href="\/knowledger\/">/, "клик ведёт на фронт /knowledger/, НЕ на /api/ JSON (симптом закрыт)");
+    assert.doesNotMatch(html, /href="\/api\/knowledger/, "карточка не ведёт на голый JSON");
   } finally {
     s.cleanup();
   }
