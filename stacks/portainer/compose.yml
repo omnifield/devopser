@@ -6,7 +6,7 @@
 # UI:      https://localhost:9443 (⚠️ первый вход — в течение ~5 минут после
 #          старта: Portainer блокирует незавершённую первичную настройку;
 #          проспал — docker compose restart portainer)
-# Порт 9443 — registry/ports.md (контракт).
+# Порт 9443 — свой хост-порт devopser (registry/ports.md).
 #
 # Удалённые демоны подключаются позже: Environments → Docker (agent на сервере)
 # либо через docker context + локальный socket. Граница: это пульт ИНФРЫ

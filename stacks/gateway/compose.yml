@@ -14,7 +14,7 @@
 #   → gateway монтирует door-volume и стартует. Вход: http://localhost:8080/ — хаб.
 # Регенерация после нового publish:  docker compose run --rm hub-core && docker compose restart gateway
 #
-# Порт 8080 — ЕДИНСТВЕННАЯ хост-публикация всей системы (registry/ports.md; контракт).
+# Порт 8080 — ЕДИНСТВЕННАЯ хост-публикация всей системы; свой хост-порт devopser (registry/ports.md).
 # Апстримы продуктов — по docker-сети omnifield-gateway, alias = имя репо (= manifest.name);
 # НЕ host.docker.internal и НЕ per-service -p (single-origin, [[single-origin-only-8080]]).
 #
