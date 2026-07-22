@@ -160,20 +160,39 @@ function genNginx(registry) {
 }
 
 // --- 3. Лендинг: карточки продуктов из реестра ----------------------------
+// Карточка кликабельна ТОЛЬКО у продукта с UI-фронтом (не-/api/ маршрут /<name>/) — тогда клик
+// ведёт на фронт /<name>/. Продукт, достижимый лишь через /api/ (backend), либо вовсе без reach
+// (service/worker) — НЕ приложение: некликабельная headless-карточка, БЕЗ ссылки на /api/ (иначе
+// «карточка = апп» врёт и ведёт на голый JSON — knowledger-симптом; канон ADR-9).
 function genLanding(registry) {
   const cards = registry
     .map(({ m }) => {
-      // ссылка карточки = фронт-маршрут (первый не-/api), иначе первый маршрут, иначе #
       const front = m.reach?.routes.find((r) => !r.path.startsWith("/api/"));
-      const href = front?.path ?? m.reach?.routes[0]?.path ?? "#";
-      const tag = m.reach ? m.type : `${m.type} · headless`;
+      const title = esc(m.title ?? m.name);
+      const desc = esc(m.description ?? "");
+      if (front) {
+        // UI-продукт: клик на серв-локейшн /<name>/ (без 301-хопа через bare /<name>).
+        const href = esc(front.path.endsWith("/") ? front.path : `${front.path}/`);
+        return (
+          `      <a class="card" href="${href}">\n` +
+          `        <h2>${title}</h2>\n` +
+          `        <p class="tag">${esc(m.type)}</p>\n` +
+          `        <p class="desc">${desc}</p>\n` +
+          `        <code>${href}</code>\n` +
+          `      </a>`
+        );
+      }
+      // backend-only (reach лишь /api/) или headless (без reach): не притворяемся аппом.
+      const api = m.reach?.routes[0]?.path; // если reach есть, front нет → все маршруты /api/
+      const tag = esc(api ? `${m.type} · api` : `${m.type} · headless`);
+      const reachLine = api ? `        <code class="muted">${esc(api)}</code>\n` : "";
       return (
-        `      <a class="card" href="${esc(href)}">\n` +
-        `        <h2>${esc(m.title ?? m.name)}</h2>\n` +
-        `        <p class="tag">${esc(tag)}</p>\n` +
-        `        <p class="desc">${esc(m.description ?? "")}</p>\n` +
-        `        <code>${esc(href)}</code>\n` +
-        `      </a>`
+        `      <div class="card card--headless">\n` +
+        `        <h2>${title}</h2>\n` +
+        `        <p class="tag">${tag}</p>\n` +
+        `        <p class="desc">${desc}</p>\n` +
+        reachLine +
+        `      </div>`
       );
     })
     .join("\n");
@@ -193,9 +212,10 @@ function genLanding(registry) {
   header { padding:2.5rem 1.5rem 1rem; } header h1 { margin:0; font-size:1.8rem; } header p { margin:.3rem 0 0; opacity:.6; }
   main.grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); padding:1.5rem; max-width:1100px; }
   .card { display:block; padding:1.1rem 1.2rem; background:var(--card); border:1px solid var(--br); border-radius:12px; text-decoration:none; color:inherit; transition:border-color .15s; }
-  .card:hover { border-color:var(--acc); }
+  a.card:hover { border-color:var(--acc); }
+  .card--headless { cursor:default; opacity:.72; } .card--headless:hover { border-color:var(--br); }
   .card h2 { margin:0 0 .2rem; font-size:1.15rem; } .tag { margin:0; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; opacity:.55; }
-  .desc { margin:.5rem 0 .7rem; opacity:.85; font-size:.92rem; } .card code { font-size:.82rem; color:var(--acc); }
+  .desc { margin:.5rem 0 .7rem; opacity:.85; font-size:.92rem; } .card code { font-size:.82rem; color:var(--acc); } .card code.muted { color:inherit; opacity:.5; }
   footer { padding:1rem 1.5rem 2.5rem; opacity:.4; font-size:.8rem; }
 </style>
 </head>
