@@ -1429,3 +1429,75 @@ test("plugin: контент материализуется ИЗ ПАКЕТА п
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- DEVOPSER-164: фрагмент рамки → DISPATCH; drift SoT = эталон плагина + версия ----
+
+test("plugin: exact-managed файл дрейфит против эталона ПЛАГИНА (SoT = пакет+версия), re-init синкает DEVOPSER-164", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        mechanism: "exact",
+        contentRoot: "h",
+        frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+      },
+      { "h/a.md": "эталон плагина v1\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    assert.equal(run(repo).status, 0);
+    assert.equal(run(repo, "--check").status, 0, "материализованный plugin-файл == эталон плагина → чисто");
+    // Уехать нельзя: правим потребительскую копию → дрейф против эталона ПЛАГИНА (не devopser).
+    writeFileSync(join(repo, ".claude/a.md"), "drifted\n");
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "дрейф plugin-managed → exit 1");
+    assert.match(c.stderr, /\.claude\/a\.md/, "дрейф называет уехавший plugin-файл");
+    assert.match(c.stderr, /эталон плагина @x\/harness/, "SoT атрибутирован ПЛАГИНУ (пакет+версия), не devopser");
+    // re-init синкает обратно к эталону ПАКЕТА плагина.
+    assert.equal(run(repo).status, 0);
+    assert.equal(
+      readFileSync(join(repo, ".claude/a.md"), "utf8"),
+      "эталон плагина v1\n",
+      "re-init восстановил из пакета плагина",
+    );
+    assert.equal(run(repo, "--check").status, 0, "после синка чисто");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: exact+seed в одном frame диспатчатся; seed init-only (правка не дрейфит) DEVOPSER-164", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        contentRoot: "h",
+        frame: [
+          { src: "managed.md", dest: ".claude/managed.md", mode: "exact" },
+          { src: "seed.md", dest: ".claude/seed.md", mode: "seed" },
+        ],
+      },
+      { "h/managed.md": "m\n", "h/seed.md": "s\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    assert.equal(run(repo).status, 0);
+    assert.ok(existsSync(join(repo, ".claude/managed.md")), "exact-запись плагина материализована (DISPATCH)");
+    assert.ok(existsSync(join(repo, ".claude/seed.md")), "seed-запись плагина материализована (DISPATCH)");
+    // seed init-only: правка легитимна, НЕ дрейф (репо владеет); exact managed.md не тронут → чисто.
+    writeFileSync(join(repo, ".claude/seed.md"), "правка репо\n");
+    assert.equal(run(repo, "--check").status, 0, "правка plugin-seed не валит drift (init-only)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

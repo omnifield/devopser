@@ -195,6 +195,10 @@ function pins(src, root) {
 // mode в template.json ВЫБИРАЕТ хендлер (диспатч), не массив/секция. Поведение — как было.
 // ctx = { target, check, drift, actions, name }. Хендлеры пишут в drift[] (--check) / actions[].
 
+// Атрибуция SoT в drift-сообщении: managed-запись плагина дрейфит против эталона ПЛАГИНА
+// (пакет+версия), не devopser (DEVOPSER-164). Core-записи (без pluginRef) → пусто.
+const sotSuffix = (e) => (e.pluginRef ? ` (SoT: эталон плагина ${e.pluginRef})` : "");
+
 // exact — managed: точная копия эталона, drift-fail; exec:true → mode 0755 (сверяется и в --check).
 function applyExact(e, { target, check, drift, actions }) {
   const expected = readEtalon(e.src, e.root);
@@ -202,7 +206,9 @@ function applyExact(e, { target, check, drift, actions }) {
   const current = readTarget(path);
   if (current !== expected) {
     if (check)
-      drift.push(`${e.dest}: ${current === null ? "отсутствует" : "отличается от эталона"}`);
+      drift.push(
+        `${e.dest}: ${current === null ? "отсутствует" : "отличается от эталона"}${sotSuffix(e)}`,
+      );
     else {
       writeLf(path, expected, e.exec);
       actions.push(`${e.dest}: ${current === null ? "создан" : "синкнут"}`);
@@ -226,7 +232,7 @@ function applyBlock(e, { target, check, drift, actions }) {
   if (current === expected) return;
   if (check)
     drift.push(
-      `${e.dest}: managed-блок ${current?.includes(BLOCK_START) ? "отличается" : "отсутствует"}`,
+      `${e.dest}: managed-блок ${current?.includes(BLOCK_START) ? "отличается" : "отсутствует"}${sotSuffix(e)}`,
     );
   else {
     writeLf(path, expected);
@@ -241,7 +247,7 @@ function applyPins(e, { target, check, drift, actions, name }) {
   const raw = readTarget(path);
   const { packageManager, node } = pins(e.src, e.root);
   if (raw === null) {
-    if (check) drift.push(`${e.dest}: отсутствует`);
+    if (check) drift.push(`${e.dest}: отсутствует${sotSuffix(e)}`);
     else {
       // Создаём из шаблона; ранги @omnifield preset-деп дерайвим из template.json.presets
       // (единый источник версий, DEVOPSER-100) — шаблон их НЕ хардкодит (__PRESET_VERSION__).
@@ -261,7 +267,7 @@ function applyPins(e, { target, check, drift, actions, name }) {
   // на --check → синкает init'ом; propagation через drift-гейт, не пассивный caret).
   for (const d of presetDepDrift(pkg)) bad.push(`${d.key}: ${d.from} → ${d.to}`);
   if (!bad.length) return;
-  if (check) drift.push(`${e.dest} пины: ${bad.join("; ")}`);
+  if (check) drift.push(`${e.dest} пины: ${bad.join("; ")}${sotSuffix(e)}`);
   else {
     pkg.packageManager = packageManager;
     pkg.engines = { ...pkg.engines, node };
@@ -527,7 +533,9 @@ function pluginFrames(plugins) {
   for (const p of plugins) {
     if (!p.meta || !Array.isArray(p.meta.frame)) continue;
     const root = join(p.dir, p.meta.contentRoot);
-    for (const e of p.meta.frame) frames.push({ ...e, root });
+    // pluginRef (напр. "@x/harness@^0.1.0") — атрибуция drift SoT: managed-запись плагина
+    // дрейфит против эталона ПЛАГИНА (пакет+версия), не devopser (DEVOPSER-164).
+    for (const e of p.meta.frame) frames.push({ ...e, root, pluginRef: p.ref });
   }
   return frames;
 }
