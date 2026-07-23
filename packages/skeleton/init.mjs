@@ -277,6 +277,42 @@ function applyPins(e, { target, check, drift, actions, name }) {
   }
 }
 
+// merge — JSON-aware deep-merge managed-фрагмента в co-owned JSON-файл потребителя (DEVOPSER-170,
+// knowledger DEVOPSER-6). Обобщение pins (тот merge'ит захардкоженные ключи package.json; merge —
+// произвольный JSON-фрагмент). Отличие от block (co-owned ТЕКСТ, line-splice `#`-блока — невалиден
+// в JSON): merge правит СТРУКТУРУ. src = JSON-фрагмент (managed-поддерево, напр. {"hooks":{...}}),
+// dest = JSON-файл, который потребитель ТОЖЕ правит (напр. .claude/settings.json).
+const isMergeObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+// deep-merge фрагмента в base: object → рекурсия; НЕ-object (скаляр/массив) → значение фрагмента
+// АВТОРИТЕТНО (replace managed-листа). base-ключи вне фрагмента сохраняются (зона потребителя).
+function deepMerge(base, frag) {
+  const out = isMergeObj(base) ? { ...base } : {};
+  for (const [k, v] of Object.entries(frag)) out[k] = isMergeObj(v) ? deepMerge(out[k], v) : v;
+  return out;
+}
+
+// dest отсутствует → создаём с одним фрагментом (deepMerge поверх {}). Дрейф (--check): compute
+// expected = merge(current, fragment) → сравнение (паттерн applyBlock). Сравниваем СТРУКТУРНО
+// (JSON.stringify без indent), поэтому формат/ключи потребителя не дрейфят — managed = только
+// листья фрагмента. Атрибуция SoT — sotSuffix (эталон плагина, как block/pins).
+function applyMerge(e, { target, check, drift, actions }) {
+  const path = join(target, e.dest);
+  const raw = readTarget(path);
+  const fragment = JSON.parse(readEtalon(e.src, e.root));
+  const current = raw === null ? {} : JSON.parse(raw);
+  const expected = deepMerge(current, fragment);
+  if (JSON.stringify(current) === JSON.stringify(expected)) return;
+  if (check)
+    drift.push(
+      `${e.dest}: managed-фрагмент ${raw === null ? "отсутствует" : "не полностью присутствует/отличается"}${sotSuffix(e)}`,
+    );
+  else {
+    writeLf(path, `${JSON.stringify(expected, null, 2)}\n`);
+    actions.push(`${e.dest}: managed-фрагмент ${raw === null ? "создан" : "смерджен"}`);
+  }
+}
+
 // Node/frontend-хвост postCreateCommand devcontainer'а (DEVOPSER-45): npm-whoami-гейт (@omnifield-PAT)
 // + pnpm install — ТОЛЬКО для node/frontend-стека. go-only → пустой хвост (devcontainer без npm/pnpm,
 // иначе go-репо без PAT падает на старте). Воркдир pnpm-install — из repo-flow (frontendWorkdir),
@@ -314,7 +350,7 @@ function applySeed(e, { target, actions, tokens }) {
   actions.push(`${e.dest}: создан из шаблона`);
 }
 
-const DISPATCH = { exact: applyExact, block: applyBlock, pins: applyPins, seed: applySeed };
+const DISPATCH = { exact: applyExact, block: applyBlock, pins: applyPins, seed: applySeed, merge: applyMerge };
 // Пресет живёт в рамке (stack=any или ∩ стек репо).
 const inStack = (e, stacks) => !e.stack || asList(e.stack).some((s) => stacks.includes(s));
 
@@ -373,7 +409,7 @@ const KNOWN_MECHANISMS = new Set(["extends", "import", "read"]);
 // записи template.json (src/dest/mode[/stack]). У плагина mechanism = словарь DISPATCH
 // (mode доставки контента), а не потребление-тулингом (как у пресета).
 const KNOWN_KINDS = new Set(["preset", "plugin"]);
-// Режимы доставки контента плагина = словарь хендлеров DISPATCH (exact|seed|block|pins).
+// Режимы доставки контента плагина = словарь хендлеров DISPATCH (exact|seed|block|pins|merge).
 const KNOWN_MODES = new Set(Object.keys(DISPATCH));
 
 // git-flow-пресет доставляется ВЕНДОРЕННЫМ managed-файлом git-flow.json (не npm; language-agnostic,

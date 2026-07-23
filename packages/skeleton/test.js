@@ -1502,6 +1502,131 @@ test("plugin: exact+seed в одном frame диспатчатся; seed init-o
   }
 });
 
+// --- DEVOPSER-170: mode:merge — JSON-aware deep-merge managed-фрагмента в co-owned JSON ----
+// Плагин поставляет ТОЛЬКО данные (JSON-фрагмент) + frame-запись {mode:"merge"}; merge-логика
+// живёт в движке (applyMerge). KNOWN_MODES (= Object.keys(DISPATCH)) авто-подхватывает merge →
+// plugin-frame валидация admit'ит его без правок. Драйвер — brainer harness (.claude/settings.json).
+
+const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+
+// Фикстура: плагин с merge-фрагментом в co-owned .claude/settings.json.
+function mergePlugin(repo, fragment) {
+  writeNpmPlugin(
+    repo,
+    "@x/harness",
+    {
+      kind: "plugin",
+      target: "agent-harness",
+      stack: "any",
+      contentRoot: "h",
+      frame: [{ src: "settings.hooks.json", dest: ".claude/settings.json", mode: "merge" }],
+    },
+    { "h/settings.hooks.json": `${JSON.stringify(fragment)}\n` },
+  );
+  bindPlugins(repo, ["@x/harness@^0.1.0"]);
+}
+
+test("merge: deep-merge в существующий JSON СОХРАНЯЕТ ключи потребителя + добавляет managed DEVOPSER-170", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const dest = join(repo, ".claude/settings.json");
+    mkdirSync(dirname(dest), { recursive: true });
+    // Потребитель ТОЖЕ правит этот файл: свои ключи + вложенный объект, часть которого managed.
+    writeFileSync(dest, `${JSON.stringify({ model: "opus", permissions: { allow: ["Bash"] } }, null, 2)}\n`);
+    mergePlugin(repo, { hooks: { SessionStart: [{ command: "scope.mjs" }] }, permissions: { deny: ["Web"] } });
+    assert.equal(run(repo).status, 0);
+    const out = readJson(dest);
+    assert.deepEqual(out.model, "opus", "скалярный ключ потребителя сохранён");
+    assert.deepEqual(out.permissions.allow, ["Bash"], "вложенный ключ потребителя сохранён (deep-merge, не replace объекта)");
+    assert.deepEqual(out.permissions.deny, ["Web"], "managed-лист добавлен в существующий объект");
+    assert.deepEqual(out.hooks, { SessionStart: [{ command: "scope.mjs" }] }, "managed-фрагмент зарегистрирован");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge: идемпотентность — 2й прогон/--check после синка = ноль дрейфа DEVOPSER-170", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const dest = join(repo, ".claude/settings.json");
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, `${JSON.stringify({ model: "opus" }, null, 2)}\n`);
+    mergePlugin(repo, { hooks: { SessionStart: [{ command: "scope.mjs" }] } });
+    assert.equal(run(repo).status, 0);
+    assert.equal(run(repo).status, 0, "повторный init — идемпотентен");
+    assert.equal(run(repo, "--check").status, 0, "после синка --check чист (ноль дрейфа)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge: drift когда managed-лист изменён/удалён; ключи потребителя НЕ дрейфят; re-init синкает DEVOPSER-170", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const dest = join(repo, ".claude/settings.json");
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, `${JSON.stringify({ model: "opus" }, null, 2)}\n`);
+    mergePlugin(repo, { hooks: { SessionStart: [{ command: "scope.mjs" }] } });
+    assert.equal(run(repo).status, 0);
+    // Потребитель правит СВОЙ ключ — merge его не трогает → НЕ дрейф.
+    writeFileSync(dest, `${JSON.stringify({ ...readJson(dest), model: "sonnet" }, null, 2)}\n`);
+    assert.equal(run(repo, "--check").status, 0, "правка ключа потребителя не дрейфит (managed = только листья фрагмента)");
+    // Уводим managed-лист — фрагмент больше не полностью присутствует → дрейф.
+    const drifted = readJson(dest);
+    drifted.hooks.SessionStart = [{ command: "hacked.mjs" }];
+    writeFileSync(dest, `${JSON.stringify(drifted, null, 2)}\n`);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "изменённый managed-лист → exit 1");
+    assert.match(c.stderr, /\.claude\/settings\.json/, "дрейф называет co-owned JSON");
+    assert.match(c.stderr, /эталон плагина @x\/harness/, "SoT атрибутирован плагину (пакет+версия)");
+    // re-init восстанавливает managed-лист, ключ потребителя (model) сохранён.
+    assert.equal(run(repo).status, 0);
+    const synced = readJson(dest);
+    assert.deepEqual(synced.hooks.SessionStart, [{ command: "scope.mjs" }], "re-init восстановил managed-лист");
+    assert.equal(synced.model, "sonnet", "правка потребителя пережила re-init");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge: create когда dest отсутствует — файл с одним фрагментом DEVOPSER-170", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const dest = join(repo, ".claude/settings.json");
+    assert.ok(!existsSync(dest), "предусловие: dest отсутствует");
+    mergePlugin(repo, { hooks: { SessionStart: [{ command: "scope.mjs" }] } });
+    assert.equal(run(repo).status, 0);
+    assert.ok(existsSync(dest), "отсутствующий dest создан");
+    assert.deepEqual(readJson(dest), { hooks: { SessionStart: [{ command: "scope.mjs" }] } }, "создан с одним фрагментом");
+    assert.equal(run(repo, "--check").status, 0, "после create --check чист");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge: массив/скаляр фрагмента АВТОРИТЕТНЫ (replace managed-листа, не concat) DEVOPSER-170", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const dest = join(repo, ".claude/settings.json");
+    mkdirSync(dirname(dest), { recursive: true });
+    // Потребитель держит массив + скаляр под теми же ключами, что managed-фрагмент.
+    writeFileSync(dest, `${JSON.stringify({ enableAllProjectMcpServers: false, order: ["z", "y"] }, null, 2)}\n`);
+    mergePlugin(repo, { enableAllProjectMcpServers: true, order: ["a"] });
+    assert.equal(run(repo).status, 0);
+    const out = readJson(dest);
+    assert.equal(out.enableAllProjectMcpServers, true, "скаляр фрагмента авторитетен (replace)");
+    assert.deepEqual(out.order, ["a"], "массив фрагмента авторитетен (replace managed-листа, НЕ merge/concat)");
+    assert.equal(run(repo, "--check").status, 0, "идемпотентно после синка");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 // --- DEVOPSER-166: дискавери/биндинг — двойная доставка + self-dogfood + version-pin ----
 
 test("plugin: template.json.plugins публикуется null (чужой биндинг — omnifield.yaml) DEVOPSER-166", () => {
