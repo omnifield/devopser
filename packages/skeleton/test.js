@@ -1335,3 +1335,57 @@ test("plugin: metadata-парс plugins из omnifield.yaml (block-seq И inline
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- DEVOPSER-165: открытая таксономия — admit plugin-registered target + collision ----
+
+test("plugin: валидный плагин с НОВЫМ target админтится (открытая таксономия) DEVOPSER-165", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness", // вне core-таксономии — admit'ится регистрацией плагина
+        stack: "any",
+        mechanism: "seed",
+        contentRoot: "content",
+        frame: [{ src: "a.md", dest: ".x/a.md", mode: "seed" }],
+      },
+      { "content/a.md": "hi\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, c.stderr); // novel target admit'нут → контракт-гейт чист
+    assert.doesNotMatch(c.stderr, /вне контракта/, "novel target не валит (devopser не держит список продуктов)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: target КОЛЛИЗИТ с core-таргетом → loud-fail DEVOPSER-165", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/collide",
+      {
+        kind: "plugin",
+        target: "repo-config", // core-таргет → коллизия
+        stack: "any",
+        contentRoot: "content",
+        frame: [{ src: "a.md", dest: ".x/a.md", mode: "seed" }],
+      },
+      { "content/a.md": "hi\n" },
+    );
+    bindPlugins(repo, ["@x/collide@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "plugin target == core → exit 1");
+    assert.match(c.stderr, /КОЛЛИЗ/i, "loud-fail называет коллизию с core");
+    assert.match(c.stderr, /repo-config/, "коллизия называет core-target");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

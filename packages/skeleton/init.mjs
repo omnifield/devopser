@@ -346,9 +346,11 @@ const stackInFrame = (presetStack, stacks) => {
 };
 
 // Известные таргеты (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает (ось
-// группировки slots). Набор = ключи template.json.targets; пресет с target вне набора → loud-fail.
-const knownTargets = () =>
-  new Set(Object.keys(TEMPLATE.targets ?? {}).filter((t) => !t.startsWith("$")));
+// группировки slots). Core-набор = ключи template.json.targets. Таксономия ОТКРЫТА
+// (DEVOPSER-165): `extra` — таргеты, admit'нутые РЕГИСТРАЦИЕЙ забинженных плагинов (devopser
+// не держит список target'ов продуктов). Без extra → закрытый core-набор (пресеты).
+const knownTargets = (extra = []) =>
+  new Set([...Object.keys(TEMPLATE.targets ?? {}).filter((t) => !t.startsWith("$")), ...extra]);
 
 // Enum mechanism (пресет-контракт -98): КАК пресет потребляется. extends (nx/biome) / import
 // (vite) / read (git-flow ЧИТАЕТСЯ тулингом — не extends/import; DEVOPSER-103). Расширяемо.
@@ -514,15 +516,25 @@ function discoverPlugins(target) {
   });
 }
 
-// Валидация забинженных плагинов (DEVOPSER-162): метаданные ∈ контракт (validateMeta kind:plugin),
-// stack плагина совместим со стеком репо. Резолв best-effort (нерезолвленный skip). Открытая
-// таксономия таргетов + collision-check — DEVOPSER-165 (пока targets = core knownTargets()).
+// Валидация забинженных плагинов (DEVOPSER-162/165): метаданные ∈ контракт (validateMeta
+// kind:plugin), stack плагина совместим со стеком репо, открытая таксономия + collision-check.
+// Резолв best-effort (нерезолвленный skip — гейт в CI, где deps стоят).
 function validateBoundPlugins(target, stacks) {
   const errors = [];
-  for (const { ref, pkg, meta, source } of discoverPlugins(target)) {
-    if (!meta) continue; // не резолвится (до install) — гейт в CI, где deps стоят
+  const plugins = discoverPlugins(target).filter((p) => p.meta);
+  const core = knownTargets(); // core-таргеты (закрытый набор пресетов)
+  // Открытая таксономия (DEVOPSER-165): target admit'ится РЕГИСТРАЦИЕЙ плагина (= биндинг
+  // потребителя). Набор известных для плагин-валидации = core ∪ таргеты забинженных плагинов.
+  const registered = plugins.map((p) => p.meta.target).filter(Boolean);
+  const open = knownTargets(registered);
+  for (const { ref, meta, source } of plugins) {
     const label = `plugin '${ref}' (${source})`;
-    errors.push(...validateMeta(label, meta, knownTargets()));
+    errors.push(...validateMeta(label, meta, open));
+    // Коллизия plugin-target ↔ core → loud-fail: плагин не вправе переопределять core-капабилити.
+    if (core.has(meta.target))
+      errors.push(
+        `${label}: target '${meta.target}' КОЛЛИЗИТ с core-таргетом {${[...core].join(", ")}} — переопределение запрещено`,
+      );
     if (meta.stack && !stackInFrame(meta.stack, stacks))
       errors.push(
         `${label}: stack ${JSON.stringify(meta.stack)} — вне рамки репо [${stacks.join(", ")}]`,
