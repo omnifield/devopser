@@ -47,6 +47,10 @@ export const ProductManifest = z
       .object({ routes: z.array(Route).min(1) })
       .strict()
       .optional(),
+    // Биндинг skeleton-плагинов потребителем (devopser DEVOPSER-108/166, knowledger DEVOPSER-6):
+    // список ссылок "name@^ver" на внешние продукт-owned капабилити, которые движок skeleton
+    // (init/drift) материализует в репо. Тонкая ссылка — не определение (истина в манифестах).
+    plugins: z.array(z.string()).optional(),
     integration: Integration.default({ scopes: [], spawnEligible: false, deps: [] }),
   })
   .strict() // ← лишний ключ = ошибка. Утечку расширенного ловит валидатор, не память.

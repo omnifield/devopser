@@ -1249,3 +1249,421 @@ test("git-flow: ошибка gh прокидывает stderr наружу, не
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- Plugin-контракт (DEVOPSER-108, knowledger DEVOPSER-6) ---------------------
+// Третий примитив (template/preset/plugin): внешняя продукт-owned капабилити, движок
+// материализует её вслепую через тот же DISPATCH. Тесты — на FIXTURE-плагине (тест-дубль по
+// контракту), ноль реального brainer-контента в devopser-репо (DEVOPSER-167).
+
+// Фикстура npm-плагина: пакет в node_modules потребителя (omnifield-блок + контент-файлы).
+function writeNpmPlugin(repo, pkg, omnifield, content = {}) {
+  const dir = join(repo, "node_modules", pkg);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "package.json"),
+    `${JSON.stringify({ name: pkg, version: "0.1.0", omnifield }, null, 2)}\n`,
+  );
+  for (const [rel, body] of Object.entries(content)) {
+    const p = join(dir, rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, body);
+  }
+  return dir;
+}
+
+// Биндинг плагинов в omnifield.yaml потребителя (единственный путь для чужих продуктов).
+function bindPlugins(repo, refs) {
+  writeFileSync(
+    join(repo, "omnifield.yaml"),
+    `apiVersion: omnifield.dev/v1\nname: consumer\ntype: service\nplugins:\n${refs
+      .map((r) => `  - "${r}"`)
+      .join("\n")}\n`,
+  );
+}
+
+// --- DEVOPSER-162: метаданные плагина + обобщённая валидация (kind:plugin) -----
+
+test("plugin: невалидные метаданные (нет contentRoot/frame) → loud-fail (contract-first) DEVOPSER-162", () => {
+  const repo = mkRepo();
+  try {
+    run(repo); // node-дефолт
+    writeNpmPlugin(repo, "@x/bad-plugin", { kind: "plugin", target: "agent-harness", stack: "any" });
+    bindPlugins(repo, ["@x/bad-plugin@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "плагин без contentRoot/frame → exit 1");
+    assert.match(c.stderr, /contentRoot/, "loud-fail называет отсутствующий contentRoot");
+    assert.match(c.stderr, /frame/, "loud-fail называет отсутствующий frame");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: frame-запись с mode вне DISPATCH → loud-fail DEVOPSER-162", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(repo, "@x/badmode", {
+      kind: "plugin",
+      target: "agent-harness",
+      stack: "any",
+      contentRoot: "content",
+      frame: [{ src: "a.md", dest: ".x/a.md", mode: "bogus" }],
+    });
+    bindPlugins(repo, ["@x/badmode@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "frame.mode вне {exact,seed,block,pins} → exit 1");
+    assert.match(c.stderr, /mode 'bogus'/, "loud-fail называет невалидный mode записи frame");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: metadata-парс plugins из omnifield.yaml (block-seq И inline-flow) DEVOPSER-162", () => {
+  // block-sequence уже покрыт bindPlugins; здесь — inline-flow ["a", "b"] тоже читается.
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(repo, "@x/bad-plugin", { kind: "plugin", target: "agent-harness", stack: "any" });
+    writeFileSync(
+      join(repo, "omnifield.yaml"),
+      'apiVersion: omnifield.dev/v1\nname: consumer\ntype: service\nplugins: ["@x/bad-plugin@^0.1.0"]\n',
+    );
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "inline-flow plugins-список тоже дискаверится → плагин валидируется");
+    assert.match(c.stderr, /@x\/bad-plugin/, "плагин из inline-flow достигает валидации");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- DEVOPSER-165: открытая таксономия — admit plugin-registered target + collision ----
+
+test("plugin: валидный плагин с НОВЫМ target админтится (открытая таксономия) DEVOPSER-165", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness", // вне core-таксономии — admit'ится регистрацией плагина
+        stack: "any",
+        mechanism: "seed",
+        contentRoot: "content",
+        frame: [{ src: "a.md", dest: ".x/a.md", mode: "seed" }],
+      },
+      { "content/a.md": "hi\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, c.stderr); // novel target admit'нут → контракт-гейт чист
+    assert.doesNotMatch(c.stderr, /вне контракта/, "novel target не валит (devopser не держит список продуктов)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: target КОЛЛИЗИТ с core-таргетом → loud-fail DEVOPSER-165", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/collide",
+      {
+        kind: "plugin",
+        target: "repo-config", // core-таргет → коллизия
+        stack: "any",
+        contentRoot: "content",
+        frame: [{ src: "a.md", dest: ".x/a.md", mode: "seed" }],
+      },
+      { "content/a.md": "hi\n" },
+    );
+    bindPlugins(repo, ["@x/collide@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "plugin target == core → exit 1");
+    assert.match(c.stderr, /КОЛЛИЗ/i, "loud-fail называет коллизию с core");
+    assert.match(c.stderr, /repo-config/, "коллизия называет core-target");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- DEVOPSER-163: контент-рут плагина — src из пакета плагина, не files/ devopser ----
+
+test("plugin: контент материализуется ИЗ ПАКЕТА плагина (contentRoot), не из files/ devopser DEVOPSER-163", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const marker = "# контент из ПАКЕТА плагина (харнесс-роль)\n";
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        mechanism: "exact",
+        contentRoot: "harness",
+        frame: [{ src: "roles/architect.md", dest: ".claude/agents/architect.md", mode: "exact" }],
+      },
+      { "harness/roles/architect.md": marker },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    const dest = join(repo, ".claude/agents/architect.md");
+    assert.ok(existsSync(dest), "плагин-managed файл материализован в потребителе");
+    assert.equal(
+      readFileSync(dest, "utf8"),
+      marker,
+      "контент резолвлен из ПАКЕТА плагина (contentRoot/harness), не из files/ devopser",
+    );
+    // Инвариант контракта: контент плагина в репо devopser НЕ заезжает.
+    assert.ok(
+      !existsSync(join(PKG_DIR, "files/roles/architect.md")),
+      "src плагина НЕ в files/ devopser (контент чужого продукта не в devopser-репо)",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- DEVOPSER-164: фрагмент рамки → DISPATCH; drift SoT = эталон плагина + версия ----
+
+test("plugin: exact-managed файл дрейфит против эталона ПЛАГИНА (SoT = пакет+версия), re-init синкает DEVOPSER-164", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        mechanism: "exact",
+        contentRoot: "h",
+        frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+      },
+      { "h/a.md": "эталон плагина v1\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    assert.equal(run(repo).status, 0);
+    assert.equal(run(repo, "--check").status, 0, "материализованный plugin-файл == эталон плагина → чисто");
+    // Уехать нельзя: правим потребительскую копию → дрейф против эталона ПЛАГИНА (не devopser).
+    writeFileSync(join(repo, ".claude/a.md"), "drifted\n");
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "дрейф plugin-managed → exit 1");
+    assert.match(c.stderr, /\.claude\/a\.md/, "дрейф называет уехавший plugin-файл");
+    assert.match(c.stderr, /эталон плагина @x\/harness/, "SoT атрибутирован ПЛАГИНУ (пакет+версия), не devopser");
+    // re-init синкает обратно к эталону ПАКЕТА плагина.
+    assert.equal(run(repo).status, 0);
+    assert.equal(
+      readFileSync(join(repo, ".claude/a.md"), "utf8"),
+      "эталон плагина v1\n",
+      "re-init восстановил из пакета плагина",
+    );
+    assert.equal(run(repo, "--check").status, 0, "после синка чисто");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: exact+seed в одном frame диспатчатся; seed init-only (правка не дрейфит) DEVOPSER-164", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        contentRoot: "h",
+        frame: [
+          { src: "managed.md", dest: ".claude/managed.md", mode: "exact" },
+          { src: "seed.md", dest: ".claude/seed.md", mode: "seed" },
+        ],
+      },
+      { "h/managed.md": "m\n", "h/seed.md": "s\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    assert.equal(run(repo).status, 0);
+    assert.ok(existsSync(join(repo, ".claude/managed.md")), "exact-запись плагина материализована (DISPATCH)");
+    assert.ok(existsSync(join(repo, ".claude/seed.md")), "seed-запись плагина материализована (DISPATCH)");
+    // seed init-only: правка легитимна, НЕ дрейф (репо владеет); exact managed.md не тронут → чисто.
+    writeFileSync(join(repo, ".claude/seed.md"), "правка репо\n");
+    assert.equal(run(repo, "--check").status, 0, "правка plugin-seed не валит drift (init-only)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- DEVOPSER-166: дискавери/биндинг — двойная доставка + self-dogfood + version-pin ----
+
+test("plugin: template.json.plugins публикуется null (чужой биндинг — omnifield.yaml) DEVOPSER-166", () => {
+  assert.equal(TEMPLATE.plugins, null, "self-dogfood слот null → у потребителей эффекта нет");
+  const repo = mkRepo();
+  try {
+    run(repo); // нет omnifield.yaml → ноль плагинов
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, "без биндинга плагинов — чисто");
+    assert.doesNotMatch(c.stdout, /\[skeleton plugins\]/, "нет плагинов → нет plugin-репорта");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: ВЕНДОРНАЯ доставка — plugin.json из .omnifield/plugins/<local> (go/не-npm репо) DEVOPSER-166", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "go.mod"), "module x\n"); // go-стек, нет node_modules
+    run(repo);
+    // Вендорим бандл плагина: .omnifield/plugins/<local>/plugin.json + контент (как git-flow.json).
+    const vdir = join(repo, ".omnifield/plugins/agent-harness-plugin");
+    mkdirSync(join(vdir, "h"), { recursive: true });
+    writeFileSync(
+      join(vdir, "plugin.json"),
+      `${JSON.stringify(
+        {
+          name: "@brainer/agent-harness-plugin",
+          version: "0.1.0",
+          omnifield: {
+            kind: "plugin",
+            target: "agent-harness",
+            stack: "any",
+            mechanism: "exact",
+            contentRoot: "h",
+            frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(join(vdir, "h/a.md"), "вендор-эталон\n");
+    bindPlugins(repo, ["@brainer/agent-harness-plugin@^0.1.0"]);
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!existsSync(join(repo, "node_modules")), "go-репо без node_modules");
+    assert.equal(
+      readFileSync(join(repo, ".claude/a.md"), "utf8"),
+      "вендор-эталон\n",
+      "контент резолвлен из ВЕНДОР-бандла (language-agnostic доставка)",
+    );
+    assert.equal(run(repo, "--check").status, 0, "вендор-плагин: drift чист после init");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: version-guard — установленная версия < пин omnifield.yaml → warn (реюз DEVOPSER-100) DEVOPSER-166", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    // writeNpmPlugin пишет version 0.1.0; пин ^0.2.0 → отставание.
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        contentRoot: "h",
+        frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+      },
+      { "h/a.md": "x\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.2.0"]);
+    const c = run(repo, "--check");
+    assert.match(c.stderr, /plugin-version/, "version-guard warn напечатан");
+    assert.match(c.stderr, /@x\/harness/, "warn называет отставший плагин");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- DEVOPSER-167: e2e-обкатка — fixture-плагин материализуется в потребителя СНАРУЖИ ----
+
+test("e2e: fixture-плагин (тест-дубль по контракту) материализуется в потребителя СНАРУЖИ; ноль контента в devopser DEVOPSER-167", () => {
+  const repo = mkRepo();
+  try {
+    run(repo); // node-потребитель
+    // Fixture-плагин = published-бандл в node_modules потребителя (СНАРУЖИ devopser). Мульти-mode frame.
+    writeNpmPlugin(
+      repo,
+      "@brainer/agent-harness-plugin",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        mechanism: "seed",
+        contentRoot: "harness",
+        frame: [
+          { src: "agents/architect.md", dest: ".claude/agents/architect.md", mode: "exact" },
+          { src: "settings.json", dest: ".claude/settings.json", mode: "seed" },
+        ],
+      },
+      {
+        "harness/agents/architect.md": "# роль architect (fixture)\n",
+        "harness/settings.json": '{ "hooks": {} }\n',
+      },
+    );
+    bindPlugins(repo, ["@brainer/agent-harness-plugin@^0.1.0"]);
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    // (1) внешний контент материализован ИЗ ПАКЕТА плагина (exact + seed записи диспатчатся).
+    assert.equal(
+      readFileSync(join(repo, ".claude/agents/architect.md"), "utf8"),
+      "# роль architect (fixture)\n",
+      "exact-запись плагина = контент из пакета плагина",
+    );
+    assert.ok(existsSync(join(repo, ".claude/settings.json")), "seed-запись плагина материализована");
+    // (2) плагин зарепорчен по target (открытая таксономия наблюдаема).
+    assert.match(
+      r.stdout,
+      /\[skeleton plugins\] agent-harness: @brainer\/agent-harness-plugin/,
+      "плагин в репорте по target",
+    );
+    // (3) drift managed-записи краснеет против эталона ПЛАГИНА (SoT = пакет+версия).
+    writeFileSync(join(repo, ".claude/agents/architect.md"), "взломано\n");
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "дрейф plugin-managed → exit 1");
+    assert.match(c.stderr, /эталон плагина @brainer\/agent-harness-plugin/, "drift SoT = плагин, не devopser");
+    // (4) ноль контента плагина в репо devopser (files/ его НЕ несёт — контент чужого продукта не заезжает).
+    assert.ok(!existsSync(join(PKG_DIR, "files/harness")), "contentRoot плагина НЕ в files/ devopser");
+    assert.ok(
+      !existsSync(join(PKG_DIR, "files/agents/architect.md")),
+      "dest плагина НЕ в files/ devopser",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: незарегистрированный target (плагин без target) → loud-fail DEVOPSER-167", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/notarget",
+      {
+        kind: "plugin",
+        stack: "any",
+        contentRoot: "h",
+        frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+      },
+      { "h/a.md": "x\n" },
+    );
+    bindPlugins(repo, ["@x/notarget@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "плагин без target (незарегистрирован) → exit 1");
+    assert.match(c.stderr, /target/, "loud-fail называет незарегистрированный target");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

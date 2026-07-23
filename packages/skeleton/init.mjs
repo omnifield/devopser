@@ -76,7 +76,9 @@ const BLOCK_START =
 const BLOCK_END = "# <<< omnifield-skeleton <<<";
 
 const norm = (s) => s.replace(/\r\n/g, "\n");
-const readEtalon = (name) => norm(readFileSync(join(FILES, name), "utf8"));
+// Эталон записи. root по умолчанию — files/ devopser; для frame-записи плагина root = корень
+// КОНТЕНТА пакета плагина (DEVOPSER-163) — src резолвится оттуда, не из files/ devopser.
+const readEtalon = (name, root = FILES) => norm(readFileSync(join(root, name), "utf8"));
 const readTarget = (p) => (existsSync(p) ? norm(readFileSync(p, "utf8")) : null);
 
 function writeLf(path, content, exec = false) {
@@ -164,13 +166,13 @@ function buildCiYml({ hasGo, hasNode, hasFrontend, hasPython, frontendWorkdir })
 
 // --- .gitignore managed-блок -------------------------------------------------
 
-function gitignoreBlock(src) {
-  return `${BLOCK_START}\n${readEtalon(src).trimEnd()}\n${BLOCK_END}\n`;
+function gitignoreBlock(src, root) {
+  return `${BLOCK_START}\n${readEtalon(src, root).trimEnd()}\n${BLOCK_END}\n`;
 }
 
 // Возвращает { expected } содержимого .gitignore после синка блока (src эталона блока — из манифеста).
-function spliceGitignore(current, src) {
-  const block = gitignoreBlock(src);
+function spliceGitignore(current, src, root) {
+  const block = gitignoreBlock(src, root);
   if (current === null) return { expected: block };
   const start = current.indexOf(BLOCK_START);
   const end = current.indexOf(BLOCK_END);
@@ -184,8 +186,8 @@ function spliceGitignore(current, src) {
   };
 }
 
-function pins(src) {
-  const tpl = JSON.parse(readEtalon(src));
+function pins(src, root) {
+  const tpl = JSON.parse(readEtalon(src, root));
   return { packageManager: tpl.packageManager, node: tpl.engines.node };
 }
 
@@ -193,14 +195,20 @@ function pins(src) {
 // mode в template.json ВЫБИРАЕТ хендлер (диспатч), не массив/секция. Поведение — как было.
 // ctx = { target, check, drift, actions, name }. Хендлеры пишут в drift[] (--check) / actions[].
 
+// Атрибуция SoT в drift-сообщении: managed-запись плагина дрейфит против эталона ПЛАГИНА
+// (пакет+версия), не devopser (DEVOPSER-164). Core-записи (без pluginRef) → пусто.
+const sotSuffix = (e) => (e.pluginRef ? ` (SoT: эталон плагина ${e.pluginRef})` : "");
+
 // exact — managed: точная копия эталона, drift-fail; exec:true → mode 0755 (сверяется и в --check).
 function applyExact(e, { target, check, drift, actions }) {
-  const expected = readEtalon(e.src);
+  const expected = readEtalon(e.src, e.root);
   const path = join(target, e.dest);
   const current = readTarget(path);
   if (current !== expected) {
     if (check)
-      drift.push(`${e.dest}: ${current === null ? "отсутствует" : "отличается от эталона"}`);
+      drift.push(
+        `${e.dest}: ${current === null ? "отсутствует" : "отличается от эталона"}${sotSuffix(e)}`,
+      );
     else {
       writeLf(path, expected, e.exec);
       actions.push(`${e.dest}: ${current === null ? "создан" : "синкнут"}`);
@@ -220,11 +228,11 @@ function applyExact(e, { target, check, drift, actions }) {
 function applyBlock(e, { target, check, drift, actions }) {
   const path = join(target, e.dest);
   const current = readTarget(path);
-  const { expected } = spliceGitignore(current, e.src);
+  const { expected } = spliceGitignore(current, e.src, e.root);
   if (current === expected) return;
   if (check)
     drift.push(
-      `${e.dest}: managed-блок ${current?.includes(BLOCK_START) ? "отличается" : "отсутствует"}`,
+      `${e.dest}: managed-блок ${current?.includes(BLOCK_START) ? "отличается" : "отсутствует"}${sotSuffix(e)}`,
     );
   else {
     writeLf(path, expected);
@@ -237,13 +245,13 @@ function applyBlock(e, { target, check, drift, actions }) {
 function applyPins(e, { target, check, drift, actions, name }) {
   const path = join(target, e.dest);
   const raw = readTarget(path);
-  const { packageManager, node } = pins(e.src);
+  const { packageManager, node } = pins(e.src, e.root);
   if (raw === null) {
-    if (check) drift.push(`${e.dest}: отсутствует`);
+    if (check) drift.push(`${e.dest}: отсутствует${sotSuffix(e)}`);
     else {
       // Создаём из шаблона; ранги @omnifield preset-деп дерайвим из template.json.presets
       // (единый источник версий, DEVOPSER-100) — шаблон их НЕ хардкодит (__PRESET_VERSION__).
-      const pkg = JSON.parse(readEtalon(e.src).replace("__NAME__", name));
+      const pkg = JSON.parse(readEtalon(e.src, e.root).replace("__NAME__", name));
       setPresetDeps(pkg);
       writeLf(path, `${JSON.stringify(pkg, null, 2)}\n`);
       actions.push(`${e.dest}: создан из шаблона`);
@@ -259,7 +267,7 @@ function applyPins(e, { target, check, drift, actions, name }) {
   // на --check → синкает init'ом; propagation через drift-гейт, не пассивный caret).
   for (const d of presetDepDrift(pkg)) bad.push(`${d.key}: ${d.from} → ${d.to}`);
   if (!bad.length) return;
-  if (check) drift.push(`${e.dest} пины: ${bad.join("; ")}`);
+  if (check) drift.push(`${e.dest} пины: ${bad.join("; ")}${sotSuffix(e)}`);
   else {
     pkg.packageManager = packageManager;
     pkg.engines = { ...pkg.engines, node };
@@ -300,7 +308,7 @@ function seedTokens({ name, stacks, frontendWorkdir }) {
 function applySeed(e, { target, actions, tokens }) {
   const path = join(target, e.dest);
   if (existsSync(path)) return;
-  let content = readEtalon(e.src);
+  let content = readEtalon(e.src, e.root);
   for (const [tok, val] of Object.entries(tokens)) content = content.replaceAll(tok, val);
   writeLf(path, content);
   actions.push(`${e.dest}: создан из шаблона`);
@@ -346,13 +354,27 @@ const stackInFrame = (presetStack, stacks) => {
 };
 
 // Известные таргеты (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает (ось
-// группировки slots). Набор = ключи template.json.targets; пресет с target вне набора → loud-fail.
-const knownTargets = () =>
-  new Set(Object.keys(TEMPLATE.targets ?? {}).filter((t) => !t.startsWith("$")));
+// группировки slots). Core-набор = ключи template.json.targets. Таксономия ОТКРЫТА
+// (DEVOPSER-165): `extra` — таргеты, admit'нутые РЕГИСТРАЦИЕЙ забинженных плагинов (devopser
+// не держит список target'ов продуктов). Без extra → закрытый core-набор (пресеты).
+const knownTargets = (extra = []) =>
+  new Set([...Object.keys(TEMPLATE.targets ?? {}).filter((t) => !t.startsWith("$")), ...extra]);
 
 // Enum mechanism (пресет-контракт -98): КАК пресет потребляется. extends (nx/biome) / import
 // (vite) / read (git-flow ЧИТАЕТСЯ тулингом — не extends/import; DEVOPSER-103). Расширяемо.
 const KNOWN_MECHANISMS = new Set(["extends", "import", "read"]);
+
+// --- Plugin-контракт (DEVOPSER-108, knowledger DEVOPSER-6) --------------------
+// Третий примитив рядом с template(рамка)/preset(дефолты слота): plugin — НОВАЯ капабилити
+// СНАРУЖИ, продукт-провайдер публикует её сам, движок материализует вслепую через тот же
+// DISPATCH. Метаданные плагина — обобщённый omnifield-блок:
+//   { kind:plugin, target, stack, mechanism, contentRoot, frame:[{src,dest,mode,stack?}] }.
+// contentRoot — папка контента ВНУТРИ пакета плагина; frame-запись = байт-в-байт shape
+// записи template.json (src/dest/mode[/stack]). У плагина mechanism = словарь DISPATCH
+// (mode доставки контента), а не потребление-тулингом (как у пресета).
+const KNOWN_KINDS = new Set(["preset", "plugin"]);
+// Режимы доставки контента плагина = словарь хендлеров DISPATCH (exact|seed|block|pins).
+const KNOWN_MODES = new Set(Object.keys(DISPATCH));
 
 // git-flow-пресет доставляется ВЕНДОРЕННЫМ managed-файлом git-flow.json (не npm; language-agnostic,
 // DEVOPSER-113) — его метаданные (omnifield) движок читает из эталона, а не из node_modules.
@@ -364,15 +386,45 @@ function vendoredGitFlowMeta() {
   }
 }
 
-// Валидация метаданных пресета (target/mechanism/kind ∈ известные). Общая для npm- и вендоренных.
-function validatePresetMeta(label, meta) {
+// Валидация метаданных капабилити — ОБЩАЯ для preset и plugin (DEVOPSER-162, обобщение
+// validatePresetMeta). kind ∈ {preset,plugin}; target ∈ переданный набор известных (для плагина
+// набор ОТКРЫТ регистрацией — DEVOPSER-165, поэтому targets приходит снаружи, валидатор не
+// знает, откуда набор); mechanism-enum зависит от kind. Для плагина — плюс plugin-shape
+// (contentRoot + frame). Contract-first: невалидные метаданные → плагин/пресет не грузится.
+function validateMeta(label, meta, targets) {
   const errors = [];
-  if (meta.kind && meta.kind !== "preset") errors.push(`${label}: kind '${meta.kind}' ≠ preset`);
-  const targets = knownTargets();
+  const kind = meta.kind ?? "preset";
+  if (!KNOWN_KINDS.has(kind)) {
+    errors.push(`${label}: kind '${meta.kind}' ∉ {${[...KNOWN_KINDS].join(", ")}}`);
+    return errors; // неизвестный kind — валидировать остальное нечем
+  }
   if (!targets.has(meta.target))
     errors.push(`${label}: target '${meta.target}' ∉ известные {${[...targets].join(", ")}}`);
-  if (meta.mechanism && !KNOWN_MECHANISMS.has(meta.mechanism))
-    errors.push(`${label}: mechanism '${meta.mechanism}' ∉ {${[...KNOWN_MECHANISMS].join(", ")}}`);
+  // mechanism: пресет потребляется тулингом (extends/import/read); плагин доставляет контент
+  // режимом DISPATCH (exact/seed/block/pins).
+  const mechEnum = kind === "plugin" ? KNOWN_MODES : KNOWN_MECHANISMS;
+  if (meta.mechanism && !mechEnum.has(meta.mechanism))
+    errors.push(`${label}: mechanism '${meta.mechanism}' ∉ {${[...mechEnum].join(", ")}}`);
+  if (kind === "plugin") errors.push(...validatePluginShape(label, meta));
+  return errors;
+}
+
+// Плагин-специфичная форма: contentRoot (откуда контент) + непустой frame; каждая frame-запись =
+// {src,dest,mode∈DISPATCH}. Без валидной формы плагин не грузится (contract-first).
+function validatePluginShape(label, meta) {
+  const errors = [];
+  if (typeof meta.contentRoot !== "string" || !meta.contentRoot)
+    errors.push(`${label}: plugin обязан объявить contentRoot (папка контента в пакете плагина)`);
+  if (!Array.isArray(meta.frame) || meta.frame.length === 0) {
+    errors.push(`${label}: plugin обязан объявить непустой frame [{src,dest,mode}]`);
+    return errors;
+  }
+  meta.frame.forEach((e, i) => {
+    if (typeof e.src !== "string" || !e.src) errors.push(`${label}: frame[${i}].src обязателен`);
+    if (typeof e.dest !== "string" || !e.dest) errors.push(`${label}: frame[${i}].dest обязателен`);
+    if (!KNOWN_MODES.has(e.mode))
+      errors.push(`${label}: frame[${i}].mode '${e.mode}' ∉ {${[...KNOWN_MODES].join(", ")}}`);
+  });
   return errors;
 }
 
@@ -393,7 +445,7 @@ function validatePresets(target, stacks) {
     if (!range) errors.push(`биндинг слота '${slot}': '${ref}' без версии (нужно ${pkg}@^ver)`);
     const meta = resolvePresetMeta(pkg, target);
     if (!meta) continue; // не резолвится (до install) — гейт в CI, где deps стоят
-    errors.push(...validatePresetMeta(`биндинг '${slot}' → ${pkg}`, meta));
+    errors.push(...validateMeta(`биндинг '${slot}' → ${pkg}`, meta, knownTargets()));
     if (meta.slot !== slot)
       errors.push(`биндинг '${slot}' → ${pkg}, но пресет объявляет slot '${meta.slot}'`);
     const dest = slotDest[slot];
@@ -406,8 +458,140 @@ function validatePresets(target, stacks) {
   // Вендоренный git-flow-пресет (DEVOPSER-113): метаданные из git-flow.json.omnifield — валидируем
   // так же (target/mechanism/kind ∈ известные). stack:any → всегда в рамке, dest-проверки нет.
   const gf = vendoredGitFlowMeta();
-  if (gf) errors.push(...validatePresetMeta("git-flow.json (вендоренный пресет)", gf));
+  if (gf) errors.push(...validateMeta("git-flow.json (вендоренный пресет)", gf, knownTargets()));
 
+  return errors;
+}
+
+// --- Plugin-дискавери и биндинг (DEVOPSER-162 npm; вендор/version-pin — DEVOPSER-166) --------
+// Биндинг плагинов — в манифесте потребителя omnifield.yaml (plugins:[...]), ЕДИНСТВЕННЫЙ путь
+// для чужих продуктов (истина в манифестах, registry-ретайр DEVOPSER-135). template.json.plugins —
+// ТОЛЬКО self-dogfood devopser (DEVOPSER-166). init.mjs — zero-dep, поэтому парсит plugins-список
+// из omnifield.yaml сам (не тянет zod-схему contract-manifest).
+
+const stripQuotes = (s) => s.replace(/^["']|["']$/g, "");
+
+// Мини-парсер `plugins:`-списка из omnifield.yaml (zero-dep, целевой — не общий YAML). Поддержка:
+// блок-последовательность (`plugins:\n  - "a@^1"`) и inline-flow (`plugins: ["a@^1", "b@^2"]`).
+function parseYamlPlugins(text) {
+  const lines = norm(text).split("\n");
+  const i = lines.findIndex((l) => /^plugins:/.test(l));
+  if (i === -1) return [];
+  const inline = lines[i].slice("plugins:".length).trim();
+  if (inline.startsWith("[")) {
+    return inline
+      .replace(/^\[/, "")
+      .replace(/\]$/, "")
+      .split(",")
+      .map((s) => stripQuotes(s.trim()))
+      .filter(Boolean);
+  }
+  const out = [];
+  for (let j = i + 1; j < lines.length; j++) {
+    const l = lines[j];
+    if (l.trim() === "" || /^\s*#/.test(l)) continue;
+    const m = l.match(/^\s+-\s+(.*\S)\s*$/);
+    if (!m) break; // дедент / следующий ключ верхнего уровня → конец списка
+    out.push(stripQuotes(m[1].trim()));
+  }
+  return out;
+}
+
+function readOmnifieldPlugins(target) {
+  const p = join(target, "omnifield.yaml");
+  return existsSync(p) ? parseYamlPlugins(readFileSync(p, "utf8")) : [];
+}
+
+// Забинженные refs = манифест потребителя omnifield.yaml (ЕДИНСТВЕННЫЙ путь для чужих продуктов,
+// DEVOPSER-135) ∪ template.json.plugins (ТОЛЬКО self-dogfood devopser на своём репо; публикуется
+// null → у потребителей пусто). Dedup по ref.
+function boundPluginRefs(target) {
+  const selfDogfood = Array.isArray(TEMPLATE.plugins) ? TEMPLATE.plugins : [];
+  return [...new Set([...readOmnifieldPlugins(target), ...selfDogfood])];
+}
+
+// Резолв метаданных+контент-рута+версии плагина — ДВОЙНАЯ доставка (DEVOPSER-166, как git-flow
+// DEVOPSER-113, language-agnostic):
+//   npm    — пакет в node_modules потребителя, метаданные из package.json.omnifield (JS-репо);
+//   вендор — бандл вендорится файлами, метаданные из plugin.json.omnifield (go/не-npm репо, куда
+//            npm не долетает). Конвенция: .omnifield/plugins/<localName>/plugin.json (+ контент).
+// null → не резолвится (напр. до install) → best-effort skip, как у пресетов; жёсткий гейт в CI.
+function resolvePlugin(pkg, target) {
+  const local = pkg.replace(/^@[^/]+\//, "");
+  const candidates = [
+    { dir: join(target, "node_modules", pkg), file: "package.json", source: `node_modules/${pkg}` },
+    {
+      dir: join(target, ".omnifield/plugins", local),
+      file: "plugin.json",
+      source: `.omnifield/plugins/${local}`,
+    },
+  ];
+  for (const c of candidates) {
+    const p = join(c.dir, c.file);
+    if (!existsSync(p)) continue;
+    const j = JSON.parse(readFileSync(p, "utf8"));
+    if (j.omnifield)
+      return { dir: c.dir, meta: j.omnifield, version: j.version ?? null, source: c.source };
+  }
+  return null;
+}
+
+// Забинженные плагины (ref → {pkg,range,dir,meta,version,source}). Нерезолвленные несут meta:null.
+function discoverPlugins(target) {
+  return boundPluginRefs(target).map((ref) => {
+    const { pkg, range } = parsePresetRef(ref);
+    const res = resolvePlugin(pkg, target);
+    return {
+      ref,
+      pkg,
+      range,
+      dir: res?.dir ?? null,
+      meta: res?.meta ?? null,
+      version: res?.version ?? null,
+      source: res?.source ?? null,
+    };
+  });
+}
+
+// Frame-записи забинженных плагинов → плоский список {src,dest,mode,stack?,root} (DEVOPSER-163/164).
+// root = корень КОНТЕНТА плагина (пакет плагина + contentRoot): readEtalon берёт src ОТТУДА, не
+// из files/ devopser — контент чужого продукта в репо devopser не заезжает. Записи текут через
+// ТОТ ЖЕ DISPATCH (shape байт-в-байт как template.json), движок не знает, что это плагин.
+function pluginFrames(plugins) {
+  const frames = [];
+  for (const p of plugins) {
+    if (!p.meta || !Array.isArray(p.meta.frame)) continue;
+    const root = join(p.dir, p.meta.contentRoot);
+    // pluginRef (напр. "@x/harness@^0.1.0") — атрибуция drift SoT: managed-запись плагина
+    // дрейфит против эталона ПЛАГИНА (пакет+версия), не devopser (DEVOPSER-164).
+    for (const e of p.meta.frame) frames.push({ ...e, root, pluginRef: p.ref });
+  }
+  return frames;
+}
+
+// Валидация забинженных плагинов (DEVOPSER-162/165): метаданные ∈ контракт (validateMeta
+// kind:plugin), stack плагина совместим со стеком репо, открытая таксономия + collision-check.
+// `plugins` — уже резолвленные (meta present); нерезолвленные отсеяны в main (гейт в CI, где deps стоят).
+function validateBoundPlugins(plugins, stacks) {
+  const errors = [];
+  const core = knownTargets(); // core-таргеты (закрытый набор пресетов)
+  // Открытая таксономия (DEVOPSER-165): target admit'ится РЕГИСТРАЦИЕЙ плагина (= биндинг
+  // потребителя). Набор известных для плагин-валидации = core ∪ таргеты забинженных плагинов.
+  const registered = plugins.map((p) => p.meta.target).filter(Boolean);
+  const open = knownTargets(registered);
+  for (const { ref, meta, source } of plugins) {
+    const label = `plugin '${ref}' (${source})`;
+    errors.push(...validateMeta(label, meta, open));
+    // Коллизия plugin-target ↔ core → loud-fail: плагин не вправе переопределять core-капабилити.
+    if (core.has(meta.target))
+      errors.push(
+        `${label}: target '${meta.target}' КОЛЛИЗИТ с core-таргетом {${[...core].join(", ")}} — переопределение запрещено`,
+      );
+    if (meta.stack && !stackInFrame(meta.stack, stacks))
+      errors.push(
+        `${label}: stack ${JSON.stringify(meta.stack)} — вне рамки репо [${stacks.join(", ")}]`,
+      );
+  }
   return errors;
 }
 
@@ -494,6 +678,29 @@ function warnStalePresets(target) {
   }
 }
 
+// Version-guard плагинов (DEVOPSER-166, реюз модели DEVOPSER-100): warn, если УСТАНОВЛЕННАЯ версия
+// плагина (npm package.json / вендор plugin.json) ниже пина omnifield.yaml. Best-effort (только
+// когда версия резолвится). Жёсткая propagation — content-drift managed-записей против эталона
+// плагина (bump → новый контент → --check краснеет → re-init синкает).
+function warnStalePlugins(plugins) {
+  for (const { pkg, range, version } of plugins) {
+    if (!range || !version) continue;
+    const inst = minVer(version);
+    const want = minVer(range);
+    if (inst && want && cmpVer(inst, want) < 0)
+      console.warn(
+        `[skeleton plugin-version] ${pkg}: установлено ${inst.join(".")} < пин ${range} (omnifield.yaml) — обнови.`,
+      );
+  }
+}
+
+// Репорт забинженных плагинов по target (открытая таксономия видна; DEVOPSER-166). Пусто → тихо.
+function reportPlugins(plugins) {
+  if (!plugins.length) return;
+  const line = plugins.map((p) => `${p.meta.target}: ${p.ref} (${p.source})`).join(" | ");
+  console.log(`[skeleton plugins] ${line}`);
+}
+
 function main() {
   printVersion();
   const args = process.argv.slice(2);
@@ -510,6 +717,23 @@ function main() {
   console.log(`[skeleton] стек: [${stacks.join(", ")}] (${source})`);
   const drift = [];
   const actions = [];
+
+  // 0. Plugin-контракт (DEVOPSER-108/162/165): дискаверим забинженные плагины ОДИН раз (для
+  //    валидации И для рамки). Валидируем ДО материализации — контракт-first: плагин без
+  //    валидного контракта НЕ грузится (его контент не заезжает в репо). В отличие от пресета
+  //    (валидируется в конце — он не пишет внешний контент), плагин пишет ЧУЖОЙ контент → гейт
+  //    раньше записи. Нерезолвленные (до install) отсеиваем — best-effort, гейт в CI --check.
+  const plugins = discoverPlugins(target).filter((p) => p.meta);
+  const pluginErrors = validateBoundPlugins(plugins, stacks);
+  if (pluginErrors.length) {
+    console.error(`[skeleton plugin-check] плагин вне контракта (${pluginErrors.length}):`);
+    for (const e of pluginErrors) console.error(`  - ${e}`);
+    console.error(
+      "Плагин без валидного контракта не грузится (knowledger DEVOPSER-6): kind:plugin + target " +
+        "(не коллизит с core) + contentRoot + frame[{src,dest,mode}] обязательны.",
+    );
+    process.exit(1);
+  }
 
   // 1-4. Рамка применяется ДИСПАТЧЕМ по declared mode (DEVOPSER-99), не по секции/массиву.
   // Порядок применения (как прежде): exact (managed, по стеку) → block (.gitignore) →
@@ -535,6 +759,15 @@ function main() {
   ];
   for (const e of frame) DISPATCH[e.mode](e, ctx);
 
+  // Frame-фрагмент от плагинов (DEVOPSER-163/164): те же mode → ТОТ ЖЕ DISPATCH, но src берётся
+  // из корня контента ПАКЕТА плагина (e.root), а drift managed-записей краснеет против эталона
+  // ПЛАГИНА (не devopser). seed плагина — init-only (как core-seed, в --check не участвует).
+  // Контент плагина verbatim — БЕЗ devopser-токенов (__NAME__/__NODE_SETUP__ — концерн скелетона).
+  const pf = pluginFrames(plugins).filter((e) => inStack(e, stacks));
+  const pluginFrame = check ? pf.filter((e) => e.mode !== "seed") : pf;
+  const pctx = { ...ctx, tokens: {} };
+  for (const e of pluginFrame) DISPATCH[e.mode](e, pctx);
+
   // 5. CI-caller'ы per stack (mode seed по смыслу, но ci.yml — вычисляемый per-stack артефакт:
   //    отдельный код-хендлер). ci.yml по стеку + pr-title всем; init-only.
   if (!check) {
@@ -553,8 +786,10 @@ function main() {
   // Version-guard (DEVOPSER-100): warn при отставании УСТАНОВЛЕННОЙ версии пресета от биндинга
   // (в обоих режимах, best-effort — не гейт, дрейф ловит preset-деп package.json).
   warnStalePresets(target);
+  warnStalePlugins(plugins); // version-guard плагинов (DEVOPSER-166)
   // Группировка пресетов по target (DEVOPSER-101): repo-config активен, release/git-flow — пусты.
   reportTargets(target);
+  reportPlugins(plugins); // забинженные плагины по target (открытая таксономия, DEVOPSER-166)
 
   // 6. Пресет-контракт (DEVOPSER-98): каждый bound-пресет живёт ВНУТРИ рамки. Hard-гейт в
   //    ОБОИХ режимах (init после материализации / --check по факту репо) — loud-fail, не дрейф.

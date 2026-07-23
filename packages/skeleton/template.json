@@ -52,6 +52,8 @@
     "biome": "@omnifield/biome-preset@^0.1.1",
     "vite": "@omnifield/vite-preset@^0.1.0"
   },
+  "plugins": null,
+  "$plugins-comment": "Self-dogfood слот devopser (DEVOPSER-108/166, knowledger DEVOPSER-6): плагины на СВОЁМ репо (список refs 'name@^ver' ИЛИ null). Биндинг ЧУЖИХ продуктов — НЕ здесь, а в манифесте потребителя omnifield.yaml (plugins:[...], единственный путь; истина в манифестах, DEVOPSER-135). Публикуется null → у потребителей эффекта нет.",
   "targets": {
     "$comment": "ТАКСОНОМИЯ таргетов (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает — ось группировки slots (slot=конкретный конфиг, target=его класс). Известные таргеты = ключи; init.mjs валит пресет с target ∉ этого набора (loud-fail). Статус: active = движок обрабатывает (repo-config: nx/biome/vite, npm-доставка); bound = пресет привязан+валидируется (git-flow: вендоренный git-flow.json, DEVOPSER-113 — language-agnostic, инструмент+rulesets по нему уже есть); declared = пустая plug-in точка (release, под будущее). Подключение — ДЕКЛАРАЦИЕЙ target в метаданных пресета, не спецкейсом в init.",
     "repo-config": "active",

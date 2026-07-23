@@ -64,6 +64,12 @@
           ],
           "additionalProperties": false
         },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "integration": {
           "type": "object",
           "properties": {
