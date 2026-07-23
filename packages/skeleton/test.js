@@ -1389,3 +1389,43 @@ test("plugin: target КОЛЛИЗИТ с core-таргетом → loud-fail DEV
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- DEVOPSER-163: контент-рут плагина — src из пакета плагина, не files/ devopser ----
+
+test("plugin: контент материализуется ИЗ ПАКЕТА плагина (contentRoot), не из files/ devopser DEVOPSER-163", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    const marker = "# контент из ПАКЕТА плагина (харнесс-роль)\n";
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        mechanism: "exact",
+        contentRoot: "harness",
+        frame: [{ src: "roles/architect.md", dest: ".claude/agents/architect.md", mode: "exact" }],
+      },
+      { "harness/roles/architect.md": marker },
+    );
+    bindPlugins(repo, ["@x/harness@^0.1.0"]);
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    const dest = join(repo, ".claude/agents/architect.md");
+    assert.ok(existsSync(dest), "плагин-managed файл материализован в потребителе");
+    assert.equal(
+      readFileSync(dest, "utf8"),
+      marker,
+      "контент резолвлен из ПАКЕТА плагина (contentRoot/harness), не из files/ devopser",
+    );
+    // Инвариант контракта: контент плагина в репо devopser НЕ заезжает.
+    assert.ok(
+      !existsSync(join(PKG_DIR, "files/roles/architect.md")),
+      "src плагина НЕ в files/ devopser (контент чужого продукта не в devopser-репо)",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
