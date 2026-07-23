@@ -1249,3 +1249,89 @@ test("git-flow: ошибка gh прокидывает stderr наружу, не
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- Plugin-контракт (DEVOPSER-108, knowledger DEVOPSER-6) ---------------------
+// Третий примитив (template/preset/plugin): внешняя продукт-owned капабилити, движок
+// материализует её вслепую через тот же DISPATCH. Тесты — на FIXTURE-плагине (тест-дубль по
+// контракту), ноль реального brainer-контента в devopser-репо (DEVOPSER-167).
+
+// Фикстура npm-плагина: пакет в node_modules потребителя (omnifield-блок + контент-файлы).
+function writeNpmPlugin(repo, pkg, omnifield, content = {}) {
+  const dir = join(repo, "node_modules", pkg);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "package.json"),
+    `${JSON.stringify({ name: pkg, version: "0.1.0", omnifield }, null, 2)}\n`,
+  );
+  for (const [rel, body] of Object.entries(content)) {
+    const p = join(dir, rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, body);
+  }
+  return dir;
+}
+
+// Биндинг плагинов в omnifield.yaml потребителя (единственный путь для чужих продуктов).
+function bindPlugins(repo, refs) {
+  writeFileSync(
+    join(repo, "omnifield.yaml"),
+    `apiVersion: omnifield.dev/v1\nname: consumer\ntype: service\nplugins:\n${refs
+      .map((r) => `  - "${r}"`)
+      .join("\n")}\n`,
+  );
+}
+
+// --- DEVOPSER-162: метаданные плагина + обобщённая валидация (kind:plugin) -----
+
+test("plugin: невалидные метаданные (нет contentRoot/frame) → loud-fail (contract-first) DEVOPSER-162", () => {
+  const repo = mkRepo();
+  try {
+    run(repo); // node-дефолт
+    writeNpmPlugin(repo, "@x/bad-plugin", { kind: "plugin", target: "agent-harness", stack: "any" });
+    bindPlugins(repo, ["@x/bad-plugin@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "плагин без contentRoot/frame → exit 1");
+    assert.match(c.stderr, /contentRoot/, "loud-fail называет отсутствующий contentRoot");
+    assert.match(c.stderr, /frame/, "loud-fail называет отсутствующий frame");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: frame-запись с mode вне DISPATCH → loud-fail DEVOPSER-162", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(repo, "@x/badmode", {
+      kind: "plugin",
+      target: "agent-harness",
+      stack: "any",
+      contentRoot: "content",
+      frame: [{ src: "a.md", dest: ".x/a.md", mode: "bogus" }],
+    });
+    bindPlugins(repo, ["@x/badmode@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "frame.mode вне {exact,seed,block,pins} → exit 1");
+    assert.match(c.stderr, /mode 'bogus'/, "loud-fail называет невалидный mode записи frame");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: metadata-парс plugins из omnifield.yaml (block-seq И inline-flow) DEVOPSER-162", () => {
+  // block-sequence уже покрыт bindPlugins; здесь — inline-flow ["a", "b"] тоже читается.
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(repo, "@x/bad-plugin", { kind: "plugin", target: "agent-harness", stack: "any" });
+    writeFileSync(
+      join(repo, "omnifield.yaml"),
+      'apiVersion: omnifield.dev/v1\nname: consumer\ntype: service\nplugins: ["@x/bad-plugin@^0.1.0"]\n',
+    );
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "inline-flow plugins-список тоже дискаверится → плагин валидируется");
+    assert.match(c.stderr, /@x\/bad-plugin/, "плагин из inline-flow достигает валидации");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
