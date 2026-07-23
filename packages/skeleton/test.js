@@ -1501,3 +1501,87 @@ test("plugin: exact+seed в одном frame диспатчатся; seed init-o
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- DEVOPSER-166: дискавери/биндинг — двойная доставка + self-dogfood + version-pin ----
+
+test("plugin: template.json.plugins публикуется null (чужой биндинг — omnifield.yaml) DEVOPSER-166", () => {
+  assert.equal(TEMPLATE.plugins, null, "self-dogfood слот null → у потребителей эффекта нет");
+  const repo = mkRepo();
+  try {
+    run(repo); // нет omnifield.yaml → ноль плагинов
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, "без биндинга плагинов — чисто");
+    assert.doesNotMatch(c.stdout, /\[skeleton plugins\]/, "нет плагинов → нет plugin-репорта");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: ВЕНДОРНАЯ доставка — plugin.json из .omnifield/plugins/<local> (go/не-npm репо) DEVOPSER-166", () => {
+  const repo = mkRepo();
+  try {
+    writeFileSync(join(repo, "go.mod"), "module x\n"); // go-стек, нет node_modules
+    run(repo);
+    // Вендорим бандл плагина: .omnifield/plugins/<local>/plugin.json + контент (как git-flow.json).
+    const vdir = join(repo, ".omnifield/plugins/agent-harness-plugin");
+    mkdirSync(join(vdir, "h"), { recursive: true });
+    writeFileSync(
+      join(vdir, "plugin.json"),
+      `${JSON.stringify(
+        {
+          name: "@brainer/agent-harness-plugin",
+          version: "0.1.0",
+          omnifield: {
+            kind: "plugin",
+            target: "agent-harness",
+            stack: "any",
+            mechanism: "exact",
+            contentRoot: "h",
+            frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(join(vdir, "h/a.md"), "вендор-эталон\n");
+    bindPlugins(repo, ["@brainer/agent-harness-plugin@^0.1.0"]);
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!existsSync(join(repo, "node_modules")), "go-репо без node_modules");
+    assert.equal(
+      readFileSync(join(repo, ".claude/a.md"), "utf8"),
+      "вендор-эталон\n",
+      "контент резолвлен из ВЕНДОР-бандла (language-agnostic доставка)",
+    );
+    assert.equal(run(repo, "--check").status, 0, "вендор-плагин: drift чист после init");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: version-guard — установленная версия < пин omnifield.yaml → warn (реюз DEVOPSER-100) DEVOPSER-166", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    // writeNpmPlugin пишет version 0.1.0; пин ^0.2.0 → отставание.
+    writeNpmPlugin(
+      repo,
+      "@x/harness",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        contentRoot: "h",
+        frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+      },
+      { "h/a.md": "x\n" },
+    );
+    bindPlugins(repo, ["@x/harness@^0.2.0"]);
+    const c = run(repo, "--check");
+    assert.match(c.stderr, /plugin-version/, "version-guard warn напечатан");
+    assert.match(c.stderr, /@x\/harness/, "warn называет отставший плагин");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

@@ -502,25 +502,54 @@ function readOmnifieldPlugins(target) {
   return existsSync(p) ? parseYamlPlugins(readFileSync(p, "utf8")) : [];
 }
 
-// Резолв метаданных+контент-рута плагина. npm: пакет в node_modules потребителя, метаданные из
-// package.json.omnifield (DEVOPSER-162). Вендор (plugin.json) — DEVOPSER-166. null → не резолвится
-// (напр. до install) → best-effort skip, как у пресетов; жёсткий гейт в CI --check, где deps стоят.
+// Забинженные refs = манифест потребителя omnifield.yaml (ЕДИНСТВЕННЫЙ путь для чужих продуктов,
+// DEVOPSER-135) ∪ template.json.plugins (ТОЛЬКО self-dogfood devopser на своём репо; публикуется
+// null → у потребителей пусто). Dedup по ref.
+function boundPluginRefs(target) {
+  const selfDogfood = Array.isArray(TEMPLATE.plugins) ? TEMPLATE.plugins : [];
+  return [...new Set([...readOmnifieldPlugins(target), ...selfDogfood])];
+}
+
+// Резолв метаданных+контент-рута+версии плагина — ДВОЙНАЯ доставка (DEVOPSER-166, как git-flow
+// DEVOPSER-113, language-agnostic):
+//   npm    — пакет в node_modules потребителя, метаданные из package.json.omnifield (JS-репо);
+//   вендор — бандл вендорится файлами, метаданные из plugin.json.omnifield (go/не-npm репо, куда
+//            npm не долетает). Конвенция: .omnifield/plugins/<localName>/plugin.json (+ контент).
+// null → не резолвится (напр. до install) → best-effort skip, как у пресетов; жёсткий гейт в CI.
 function resolvePlugin(pkg, target) {
-  const dir = join(target, "node_modules", pkg);
-  const pj = join(dir, "package.json");
-  if (existsSync(pj)) {
-    const meta = JSON.parse(readFileSync(pj, "utf8")).omnifield ?? null;
-    return meta ? { dir, meta, source: `node_modules/${pkg}` } : null;
+  const local = pkg.replace(/^@[^/]+\//, "");
+  const candidates = [
+    { dir: join(target, "node_modules", pkg), file: "package.json", source: `node_modules/${pkg}` },
+    {
+      dir: join(target, ".omnifield/plugins", local),
+      file: "plugin.json",
+      source: `.omnifield/plugins/${local}`,
+    },
+  ];
+  for (const c of candidates) {
+    const p = join(c.dir, c.file);
+    if (!existsSync(p)) continue;
+    const j = JSON.parse(readFileSync(p, "utf8"));
+    if (j.omnifield)
+      return { dir: c.dir, meta: j.omnifield, version: j.version ?? null, source: c.source };
   }
   return null;
 }
 
-// Забинженные плагины потребителя (ref → {pkg,range,dir,meta,source}). Нерезолвленные несут meta:null.
+// Забинженные плагины (ref → {pkg,range,dir,meta,version,source}). Нерезолвленные несут meta:null.
 function discoverPlugins(target) {
-  return readOmnifieldPlugins(target).map((ref) => {
+  return boundPluginRefs(target).map((ref) => {
     const { pkg, range } = parsePresetRef(ref);
     const res = resolvePlugin(pkg, target);
-    return { ref, pkg, range, dir: res?.dir ?? null, meta: res?.meta ?? null, source: res?.source ?? null };
+    return {
+      ref,
+      pkg,
+      range,
+      dir: res?.dir ?? null,
+      meta: res?.meta ?? null,
+      version: res?.version ?? null,
+      source: res?.source ?? null,
+    };
   });
 }
 
@@ -649,6 +678,29 @@ function warnStalePresets(target) {
   }
 }
 
+// Version-guard плагинов (DEVOPSER-166, реюз модели DEVOPSER-100): warn, если УСТАНОВЛЕННАЯ версия
+// плагина (npm package.json / вендор plugin.json) ниже пина omnifield.yaml. Best-effort (только
+// когда версия резолвится). Жёсткая propagation — content-drift managed-записей против эталона
+// плагина (bump → новый контент → --check краснеет → re-init синкает).
+function warnStalePlugins(plugins) {
+  for (const { pkg, range, version } of plugins) {
+    if (!range || !version) continue;
+    const inst = minVer(version);
+    const want = minVer(range);
+    if (inst && want && cmpVer(inst, want) < 0)
+      console.warn(
+        `[skeleton plugin-version] ${pkg}: установлено ${inst.join(".")} < пин ${range} (omnifield.yaml) — обнови.`,
+      );
+  }
+}
+
+// Репорт забинженных плагинов по target (открытая таксономия видна; DEVOPSER-166). Пусто → тихо.
+function reportPlugins(plugins) {
+  if (!plugins.length) return;
+  const line = plugins.map((p) => `${p.meta.target}: ${p.ref} (${p.source})`).join(" | ");
+  console.log(`[skeleton plugins] ${line}`);
+}
+
 function main() {
   printVersion();
   const args = process.argv.slice(2);
@@ -734,8 +786,10 @@ function main() {
   // Version-guard (DEVOPSER-100): warn при отставании УСТАНОВЛЕННОЙ версии пресета от биндинга
   // (в обоих режимах, best-effort — не гейт, дрейф ловит preset-деп package.json).
   warnStalePresets(target);
+  warnStalePlugins(plugins); // version-guard плагинов (DEVOPSER-166)
   // Группировка пресетов по target (DEVOPSER-101): repo-config активен, release/git-flow — пусты.
   reportTargets(target);
+  reportPlugins(plugins); // забинженные плагины по target (открытая таксономия, DEVOPSER-166)
 
   // 6. Пресет-контракт (DEVOPSER-98): каждый bound-пресет живёт ВНУТРИ рамки. Hard-гейт в
   //    ОБОИХ режимах (init после материализации / --check по факту репо) — loud-fail, не дрейф.

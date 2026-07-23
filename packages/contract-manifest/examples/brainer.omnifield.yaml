@@ -18,3 +18,7 @@ reach:
 integration:
   scopes: [workspace, control-plane]
   spawnEligible: true
+# Биндинг skeleton-плагинов (devopser DEVOPSER-108/166): внешняя продукт-owned капабилити,
+# которую движок init/drift материализует в репо. Потребитель #1 — agent-harness (BRAIN-8).
+plugins:
+  - "@brainer/agent-harness-plugin@^0.1.0"
