@@ -1585,3 +1585,85 @@ test("plugin: version-guard — установленная версия < пин
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- DEVOPSER-167: e2e-обкатка — fixture-плагин материализуется в потребителя СНАРУЖИ ----
+
+test("e2e: fixture-плагин (тест-дубль по контракту) материализуется в потребителя СНАРУЖИ; ноль контента в devopser DEVOPSER-167", () => {
+  const repo = mkRepo();
+  try {
+    run(repo); // node-потребитель
+    // Fixture-плагин = published-бандл в node_modules потребителя (СНАРУЖИ devopser). Мульти-mode frame.
+    writeNpmPlugin(
+      repo,
+      "@brainer/agent-harness-plugin",
+      {
+        kind: "plugin",
+        target: "agent-harness",
+        stack: "any",
+        mechanism: "seed",
+        contentRoot: "harness",
+        frame: [
+          { src: "agents/architect.md", dest: ".claude/agents/architect.md", mode: "exact" },
+          { src: "settings.json", dest: ".claude/settings.json", mode: "seed" },
+        ],
+      },
+      {
+        "harness/agents/architect.md": "# роль architect (fixture)\n",
+        "harness/settings.json": '{ "hooks": {} }\n',
+      },
+    );
+    bindPlugins(repo, ["@brainer/agent-harness-plugin@^0.1.0"]);
+    const r = run(repo);
+    assert.equal(r.status, 0, r.stderr);
+    // (1) внешний контент материализован ИЗ ПАКЕТА плагина (exact + seed записи диспатчатся).
+    assert.equal(
+      readFileSync(join(repo, ".claude/agents/architect.md"), "utf8"),
+      "# роль architect (fixture)\n",
+      "exact-запись плагина = контент из пакета плагина",
+    );
+    assert.ok(existsSync(join(repo, ".claude/settings.json")), "seed-запись плагина материализована");
+    // (2) плагин зарепорчен по target (открытая таксономия наблюдаема).
+    assert.match(
+      r.stdout,
+      /\[skeleton plugins\] agent-harness: @brainer\/agent-harness-plugin/,
+      "плагин в репорте по target",
+    );
+    // (3) drift managed-записи краснеет против эталона ПЛАГИНА (SoT = пакет+версия).
+    writeFileSync(join(repo, ".claude/agents/architect.md"), "взломано\n");
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "дрейф plugin-managed → exit 1");
+    assert.match(c.stderr, /эталон плагина @brainer\/agent-harness-plugin/, "drift SoT = плагин, не devopser");
+    // (4) ноль контента плагина в репо devopser (files/ его НЕ несёт — контент чужого продукта не заезжает).
+    assert.ok(!existsSync(join(PKG_DIR, "files/harness")), "contentRoot плагина НЕ в files/ devopser");
+    assert.ok(
+      !existsSync(join(PKG_DIR, "files/agents/architect.md")),
+      "dest плагина НЕ в files/ devopser",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plugin: незарегистрированный target (плагин без target) → loud-fail DEVOPSER-167", () => {
+  const repo = mkRepo();
+  try {
+    run(repo);
+    writeNpmPlugin(
+      repo,
+      "@x/notarget",
+      {
+        kind: "plugin",
+        stack: "any",
+        contentRoot: "h",
+        frame: [{ src: "a.md", dest: ".claude/a.md", mode: "exact" }],
+      },
+      { "h/a.md": "x\n" },
+    );
+    bindPlugins(repo, ["@x/notarget@^0.1.0"]);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "плагин без target (незарегистрирован) → exit 1");
+    assert.match(c.stderr, /target/, "loud-fail называет незарегистрированный target");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

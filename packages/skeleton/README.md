@@ -129,6 +129,74 @@ repo-config пресеты (nx/biome/vite) остаются npm — это JS-т
 Пресет-контракт (метаданные + валидация «в рамке») — **общий**, поэтому git-flow ложится на тот
 же движок, что repo-config (композиция DEVOPSER-108).
 
+## Plugin-контракт — внешние продукт-owned капабилити (DEVOPSER-108, knowledger `DEVOPSER-6`)
+
+Рядом с **template** (рамка) и **preset** (дефолты слота) — третий примитив **plugin**: НОВАЯ
+капабилити **СНАРУЖИ**, которую продукт-провайдер (напр. brainer) публикует сам, а движок
+материализует **вслепую** через тот же `DISPATCH`. devopser = фреймворк над репозиториями: ядро +
+плагины. Потребитель #1 — agent-harness (`BRAIN-8`).
+
+**preset vs plugin:**
+
+| | preset | plugin |
+|---|---|---|
+| Что | дефолты ВНУТРИ рамки (nx/biome/vite/git-flow) | НОВАЯ капабилити СНАРУЖИ |
+| Владелец контента | devopser (`files/`) | продукт-провайдер (его пакет) |
+| Таксономия `target` | закрытая (ключи `template.json.targets`) | ОТКРЫТАЯ (admit регистрацией) |
+| `mechanism` | как потребляется (`extends`\|`import`\|`read`) | режим доставки контента (`exact`\|`seed`\|`block`\|`pins`) |
+| Приносит контент | нет (конфиг-слот) | да (`contentRoot` + `frame`) |
+
+**Метаданные плагина** — обобщённый `omnifield`-блок (тот же `validateMeta`, что у пресета):
+
+```jsonc
+{ "omnifield": {
+  "kind": "plugin",            // ветка валидации (∈ {preset, plugin})
+  "target": "agent-harness",   // категория капабилити; ОТКРЫТАЯ таксономия
+  "stack": "any",              // node|go|frontend|python|any — совместимость с репо
+  "mechanism": "seed",         // режим доставки ∈ словарь DISPATCH (exact|seed|block|pins)
+  "contentRoot": "harness",    // папка контента ВНУТРИ пакета плагина (корень для src)
+  "frame": [                   // фрагмент рамки — БАЙТ-В-БАЙТ shape записи template.json
+    { "src": "roles/architect.md", "dest": ".claude/agents/architect.md", "mode": "exact" },
+    { "src": "hooks/scope.mjs",    "dest": ".claude/hooks/scope.mjs",     "mode": "seed"  }
+  ] } }
+```
+
+**Биндинг — в манифесте потребителя `omnifield.yaml`** (ЕДИНСТВЕННЫЙ путь для чужих продуктов;
+истина в манифестах, DEVOPSER-135). `template.json.plugins` — ТОЛЬКО self-dogfood devopser на
+своём репо (публикуется `null`):
+
+```yaml
+# omnifield.yaml потребителя (зона потребителя, не devopser-owned template.json)
+plugins:
+  - "@brainer/agent-harness-plugin@^0.1.0"
+```
+
+Поле `plugins` — часть manifest-контракта (`@omnifield/contract-manifest`, `ProductManifest`).
+
+**Двойная доставка (language-agnostic, как git-flow DEVOPSER-113):**
+- **npm** — пакет в `node_modules` потребителя, метаданные из `package.json.omnifield` (JS-репо);
+- **вендор** — бандл вендорится файлами, метаданные из `plugin.json.omnifield` (go/не-npm репо,
+  куда npm не долетает). Конвенция: `.omnifield/plugins/<localName>/plugin.json` + контент рядом.
+
+**Поток в движке (ноль знания, что это плагин):**
+1. `init.mjs` читает `omnifield.yaml` (∪ `template.json.plugins`) → список плагинов;
+2. резолвит пакет (npm ИЛИ вендор) → `omnifield` → **`validateMeta(kind:plugin)`** (contentRoot +
+   frame обязательны; stack совместим с репо) — **ДО материализации** (контракт-first: невалидный
+   плагин не грузится, его контент не заезжает);
+3. **регистрирует `target`**: `knownTargets` = core ∪ таргеты забинженных плагинов (ОТКРЫТАЯ
+   таксономия; коллизия plugin-target ↔ core → **loud-fail**);
+4. каждую `frame`-запись гонит через **тот же `DISPATCH`** по `mode`, но `readEtalon` берёт `src`
+   из **корня контента ПАКЕТА плагина** (`contentRoot`), не из `files/` devopser;
+5. **drift** managed-записей плагина краснеет против **эталона ПЛАГИНА** (пакет + его версия), не
+   против devopser (SoT атрибутирован в отчёте: `(SoT: эталон плагина @scope/name@^ver)`).
+   Version-guard warn'ит, если установленная версия ниже пина `omnifield.yaml` (реюз DEVOPSER-100).
+
+**Границы (канон, без компромиссов):** ноль хардкода чужого в движке (`if (target === '...')`
+запрещён); контент плагина в репо devopser **НЕ заезжает**; незарегистрированный/коллизийный target
+→ loud-fail (init И `--check`); движок остаётся **agent-agnostic** (ноль ролей/акторов/прав). Для
+своих тестов/e2e devopser использует минимальный **fixture-плагин** (тест-дубль по контракту) —
+реальный бандл провайдера в devopser-репо не заводится.
+
 ## git-инструмент (`scripts/git-flow.mjs`, DEVOPSER-106)
 
 Managed-скрипт (mode `exact`, вендорится+drift как `devbox-*`), который **ЧИТАЕТ** вендоренный
