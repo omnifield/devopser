@@ -30,19 +30,21 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 ## Режимы применения (`mode`)
 
 **КАК** файл кладётся объявлено явно в `template.json` (`mode` у каждой записи, DEVOPSER-99);
-`init.mjs` **диспатчит** по `mode` (хендлеры), а не по тому, в каком массиве запись. Четыре
-режима — это граница «рамка enforced (DEVOPSER-95) vs сид, который репо докручивает»:
+`init.mjs` **диспатчит** по `mode` (хендлеры), а не по тому, в каком массиве запись. Режимы —
+это граница «рамка enforced (DEVOPSER-95) vs сид, который репо докручивает»:
 
 | `mode` | Что делает | Drift-check | Пример |
 |---|---|---|---|
 | `exact` | точная копия эталона; `exec:true` → бит `0755` | **краснеет** на любом расхождении (уехать нельзя) | `.husky/*`, `scripts/devbox-*`, `.editorconfig` |
-| `block` | splice managed-блока между маркерами в файл, который репо ТОЖЕ правит | **краснеет** только на managed-блоке (свои строки репо не трогаются) | `.gitignore` |
+| `block` | splice managed-блока между маркерами в co-owned **текст** (репо ТОЖЕ правит) | **краснеет** только на managed-блоке (свои строки репо не трогаются) | `.gitignore` |
+| `merge` | JSON-aware deep-merge managed-фрагмента в co-owned **JSON** (репо ТОЖЕ правит) | **краснеет** только на листьях фрагмента (прочие ключи — зона репо) | `.claude/settings.json` (`hooks`-фрагмент) |
 | `pins` | merge отдельных ключей; остальной файл — зона репо | **краснеет** только на этих ключах | `package.json` (`packageManager`+`engines.node`) |
 | `seed` | создать, только если отсутствует | НЕ drift — репо легитимно правит | `nx.json`, `biome.json`, `.golangci.yml`, `.devcontainer/*` |
 
-`exact`/`block`/`pins` — **рамка** (enforced, drift-fail на своей части). `seed` — **докрутка**
-(дефолт-сид, дальше зона репо/пресета). `block` и `pins` остаются код-хендлерами (splice/merge —
-не чистые данные); `mode` лишь **выбирает** хендлер. Расширить рамку новым режимом = добавить
+`exact`/`block`/`merge`/`pins` — **рамка** (enforced, drift-fail на своей части). `seed` — **докрутка**
+(дефолт-сид, дальше зона репо/пресета). `block`/`merge`/`pins` остаются код-хендлерами (splice/deep-merge —
+не чистые данные): `block` правит co-owned текст, `merge` — co-owned JSON-структуру, `pins` —
+захардкоженные ключи; `mode` лишь **выбирает** хендлер. Расширить рамку новым режимом = добавить
 хендлер в `DISPATCH` + объявить `mode` у записей, не ветвить логику по имени файла.
 
 ## Пресет-контракт (`slot` → пресет, DEVOPSER-98)
@@ -143,7 +145,7 @@ repo-config пресеты (nx/biome/vite) остаются npm — это JS-т
 | Что | дефолты ВНУТРИ рамки (nx/biome/vite/git-flow) | НОВАЯ капабилити СНАРУЖИ |
 | Владелец контента | devopser (`files/`) | продукт-провайдер (его пакет) |
 | Таксономия `target` | закрытая (ключи `template.json.targets`) | ОТКРЫТАЯ (admit регистрацией) |
-| `mechanism` | как потребляется (`extends`\|`import`\|`read`) | режим доставки контента (`exact`\|`seed`\|`block`\|`pins`) |
+| `mechanism` | **есть** — как потребляется тулингом (`extends`\|`import`\|`read`) | **нет** — материализацию несёт per-entry `frame[].mode` |
 | Приносит контент | нет (конфиг-слот) | да (`contentRoot` + `frame`) |
 
 **Метаданные плагина** — обобщённый `omnifield`-блок (тот же `validateMeta`, что у пресета):
@@ -153,7 +155,6 @@ repo-config пресеты (nx/biome/vite) остаются npm — это JS-т
   "kind": "plugin",            // ветка валидации (∈ {preset, plugin})
   "target": "agent-harness",   // категория капабилити; ОТКРЫТАЯ таксономия
   "stack": "any",              // node|go|frontend|python|any — совместимость с репо
-  "mechanism": "seed",         // режим доставки ∈ словарь DISPATCH (exact|seed|block|pins)
   "contentRoot": "harness",    // папка контента ВНУТРИ пакета плагина (корень для src)
   "frame": [                   // фрагмент рамки — БАЙТ-В-БАЙТ shape записи template.json
     { "src": "roles/architect.md", "dest": ".claude/agents/architect.md", "mode": "exact" },

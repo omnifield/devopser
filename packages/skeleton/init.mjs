@@ -277,6 +277,42 @@ function applyPins(e, { target, check, drift, actions, name }) {
   }
 }
 
+// merge — JSON-aware deep-merge managed-фрагмента в co-owned JSON-файл потребителя (DEVOPSER-170,
+// knowledger DEVOPSER-6). Обобщение pins (тот merge'ит захардкоженные ключи package.json; merge —
+// произвольный JSON-фрагмент). Отличие от block (co-owned ТЕКСТ, line-splice `#`-блока — невалиден
+// в JSON): merge правит СТРУКТУРУ. src = JSON-фрагмент (managed-поддерево, напр. {"hooks":{...}}),
+// dest = JSON-файл, который потребитель ТОЖЕ правит (напр. .claude/settings.json).
+const isMergeObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+// deep-merge фрагмента в base: object → рекурсия; НЕ-object (скаляр/массив) → значение фрагмента
+// АВТОРИТЕТНО (replace managed-листа). base-ключи вне фрагмента сохраняются (зона потребителя).
+function deepMerge(base, frag) {
+  const out = isMergeObj(base) ? { ...base } : {};
+  for (const [k, v] of Object.entries(frag)) out[k] = isMergeObj(v) ? deepMerge(out[k], v) : v;
+  return out;
+}
+
+// dest отсутствует → создаём с одним фрагментом (deepMerge поверх {}). Дрейф (--check): compute
+// expected = merge(current, fragment) → сравнение (паттерн applyBlock). Сравниваем СТРУКТУРНО
+// (JSON.stringify без indent), поэтому формат/ключи потребителя не дрейфят — managed = только
+// листья фрагмента. Атрибуция SoT — sotSuffix (эталон плагина, как block/pins).
+function applyMerge(e, { target, check, drift, actions }) {
+  const path = join(target, e.dest);
+  const raw = readTarget(path);
+  const fragment = JSON.parse(readEtalon(e.src, e.root));
+  const current = raw === null ? {} : JSON.parse(raw);
+  const expected = deepMerge(current, fragment);
+  if (JSON.stringify(current) === JSON.stringify(expected)) return;
+  if (check)
+    drift.push(
+      `${e.dest}: managed-фрагмент ${raw === null ? "отсутствует" : "не полностью присутствует/отличается"}${sotSuffix(e)}`,
+    );
+  else {
+    writeLf(path, `${JSON.stringify(expected, null, 2)}\n`);
+    actions.push(`${e.dest}: managed-фрагмент ${raw === null ? "создан" : "смерджен"}`);
+  }
+}
+
 // Node/frontend-хвост postCreateCommand devcontainer'а (DEVOPSER-45): npm-whoami-гейт (@omnifield-PAT)
 // + pnpm install — ТОЛЬКО для node/frontend-стека. go-only → пустой хвост (devcontainer без npm/pnpm,
 // иначе go-репо без PAT падает на старте). Воркдир pnpm-install — из repo-flow (frontendWorkdir),
@@ -314,7 +350,7 @@ function applySeed(e, { target, actions, tokens }) {
   actions.push(`${e.dest}: создан из шаблона`);
 }
 
-const DISPATCH = { exact: applyExact, block: applyBlock, pins: applyPins, seed: applySeed };
+const DISPATCH = { exact: applyExact, block: applyBlock, pins: applyPins, seed: applySeed, merge: applyMerge };
 // Пресет живёт в рамке (stack=any или ∩ стек репо).
 const inStack = (e, stacks) => !e.stack || asList(e.stack).some((s) => stacks.includes(s));
 
@@ -368,12 +404,12 @@ const KNOWN_MECHANISMS = new Set(["extends", "import", "read"]);
 // Третий примитив рядом с template(рамка)/preset(дефолты слота): plugin — НОВАЯ капабилити
 // СНАРУЖИ, продукт-провайдер публикует её сам, движок материализует вслепую через тот же
 // DISPATCH. Метаданные плагина — обобщённый omnifield-блок:
-//   { kind:plugin, target, stack, mechanism, contentRoot, frame:[{src,dest,mode,stack?}] }.
+//   { kind:plugin, target, stack, contentRoot, frame:[{src,dest,mode,stack?}] }.
 // contentRoot — папка контента ВНУТРИ пакета плагина; frame-запись = байт-в-байт shape
-// записи template.json (src/dest/mode[/stack]). У плагина mechanism = словарь DISPATCH
-// (mode доставки контента), а не потребление-тулингом (как у пресета).
+// записи template.json (src/dest/mode[/stack]). mechanism у плагина НЕ объявляется —
+// материализацию несёт per-entry frame[].mode (mechanism = поле ПРЕСЕТА, DEVOPSER-169).
 const KNOWN_KINDS = new Set(["preset", "plugin"]);
-// Режимы доставки контента плагина = словарь хендлеров DISPATCH (exact|seed|block|pins).
+// Режимы доставки контента плагина = словарь хендлеров DISPATCH (exact|seed|block|pins|merge).
 const KNOWN_MODES = new Set(Object.keys(DISPATCH));
 
 // git-flow-пресет доставляется ВЕНДОРЕННЫМ managed-файлом git-flow.json (не npm; language-agnostic,
@@ -389,8 +425,9 @@ function vendoredGitFlowMeta() {
 // Валидация метаданных капабилити — ОБЩАЯ для preset и plugin (DEVOPSER-162, обобщение
 // validatePresetMeta). kind ∈ {preset,plugin}; target ∈ переданный набор известных (для плагина
 // набор ОТКРЫТ регистрацией — DEVOPSER-165, поэтому targets приходит снаружи, валидатор не
-// знает, откуда набор); mechanism-enum зависит от kind. Для плагина — плюс plugin-shape
-// (contentRoot + frame). Contract-first: невалидные метаданные → плагин/пресет не грузится.
+// знает, откуда набор); mechanism-enum — только для пресета (у плагина mechanism вне контракта,
+// DEVOPSER-169). Для плагина — плюс plugin-shape (contentRoot + frame). Contract-first:
+// невалидные метаданные → плагин/пресет не грузится.
 function validateMeta(label, meta, targets) {
   const errors = [];
   const kind = meta.kind ?? "preset";
@@ -400,11 +437,12 @@ function validateMeta(label, meta, targets) {
   }
   if (!targets.has(meta.target))
     errors.push(`${label}: target '${meta.target}' ∉ известные {${[...targets].join(", ")}}`);
-  // mechanism: пресет потребляется тулингом (extends/import/read); плагин доставляет контент
-  // режимом DISPATCH (exact/seed/block/pins).
-  const mechEnum = kind === "plugin" ? KNOWN_MODES : KNOWN_MECHANISMS;
-  if (meta.mechanism && !mechEnum.has(meta.mechanism))
-    errors.push(`${label}: mechanism '${meta.mechanism}' ∉ {${[...mechEnum].join(", ")}}`);
+  // mechanism — поле ПРЕСЕТА (extends|import|read: КАК пресет потребляется тулингом). У плагина
+  // НЕ объявляется — материализацию полностью несёт per-entry frame[].mode; top-level mechanism
+  // ничего не драйвит → вестигиально (present → игнор, НЕ ошибка). DEVOPSER-169, knowledger
+  // DEVOPSER-6. Валидируем mechanism ТОЛЬКО для пресета.
+  if (kind !== "plugin" && meta.mechanism && !KNOWN_MECHANISMS.has(meta.mechanism))
+    errors.push(`${label}: mechanism '${meta.mechanism}' ∉ {${[...KNOWN_MECHANISMS].join(", ")}}`);
   if (kind === "plugin") errors.push(...validatePluginShape(label, meta));
   return errors;
 }
