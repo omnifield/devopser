@@ -1,7 +1,8 @@
 # Publish @omnifield/* → GitHub Packages. Запуск руками (workflow_dispatch):
 #   gh workflow run release.yml
 # GITHUB_TOKEN c packages:write публикует пакеты своего репо — PAT не нужен.
-# Версии — в package.json пакетов; уже опубликованная версия = ошибка (бампни).
+# Версии — в package.json пакетов. Publish ИДЕМПОТЕНТЕН (DEVOPSER-132): новые версии
+# выкатываются, уже опубликованные пропускаются с логом (не роняют джобу) — партиал-бамп ок.
 name: Release packages
 
 on:
@@ -23,7 +24,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@omnifield'
       - run: pnpm install --frozen-lockfile
-      # -r обходит packages/*, private-корень пропускается; workspace:* → версии.
-      - run: pnpm -r publish --no-git-checks
+      # Пер-пакетная идемпотентная публикация: новые версии → выкат, дубликаты → skip.
+      - run: node scripts/publish-idempotent.mjs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

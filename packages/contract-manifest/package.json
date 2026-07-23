@@ -1,6 +1,6 @@
 {
   "name": "@omnifield/contract-manifest",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Тонкий product-manifest контракт экосистемы Omnifield (omnifield.dev/v1). Источник правды — Zod; omnifield.schema.json выводится из неё (types-from-zod).",
   "license": "UNLICENSED",
   "private": false,
