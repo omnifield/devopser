@@ -145,7 +145,7 @@ repo-config пресеты (nx/biome/vite) остаются npm — это JS-т
 | Что | дефолты ВНУТРИ рамки (nx/biome/vite/git-flow) | НОВАЯ капабилити СНАРУЖИ |
 | Владелец контента | devopser (`files/`) | продукт-провайдер (его пакет) |
 | Таксономия `target` | закрытая (ключи `template.json.targets`) | ОТКРЫТАЯ (admit регистрацией) |
-| `mechanism` | как потребляется (`extends`\|`import`\|`read`) | режим доставки контента (`exact`\|`seed`\|`block`\|`pins`) |
+| `mechanism` | **есть** — как потребляется тулингом (`extends`\|`import`\|`read`) | **нет** — материализацию несёт per-entry `frame[].mode` |
 | Приносит контент | нет (конфиг-слот) | да (`contentRoot` + `frame`) |
 
 **Метаданные плагина** — обобщённый `omnifield`-блок (тот же `validateMeta`, что у пресета):
@@ -155,7 +155,6 @@ repo-config пресеты (nx/biome/vite) остаются npm — это JS-т
   "kind": "plugin",            // ветка валидации (∈ {preset, plugin})
   "target": "agent-harness",   // категория капабилити; ОТКРЫТАЯ таксономия
   "stack": "any",              // node|go|frontend|python|any — совместимость с репо
-  "mechanism": "seed",         // режим доставки ∈ словарь DISPATCH (exact|seed|block|pins)
   "contentRoot": "harness",    // папка контента ВНУТРИ пакета плагина (корень для src)
   "frame": [                   // фрагмент рамки — БАЙТ-В-БАЙТ shape записи template.json
     { "src": "roles/architect.md", "dest": ".claude/agents/architect.md", "mode": "exact" },

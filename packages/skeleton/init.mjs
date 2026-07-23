@@ -404,10 +404,10 @@ const KNOWN_MECHANISMS = new Set(["extends", "import", "read"]);
 // Третий примитив рядом с template(рамка)/preset(дефолты слота): plugin — НОВАЯ капабилити
 // СНАРУЖИ, продукт-провайдер публикует её сам, движок материализует вслепую через тот же
 // DISPATCH. Метаданные плагина — обобщённый omnifield-блок:
-//   { kind:plugin, target, stack, mechanism, contentRoot, frame:[{src,dest,mode,stack?}] }.
+//   { kind:plugin, target, stack, contentRoot, frame:[{src,dest,mode,stack?}] }.
 // contentRoot — папка контента ВНУТРИ пакета плагина; frame-запись = байт-в-байт shape
-// записи template.json (src/dest/mode[/stack]). У плагина mechanism = словарь DISPATCH
-// (mode доставки контента), а не потребление-тулингом (как у пресета).
+// записи template.json (src/dest/mode[/stack]). mechanism у плагина НЕ объявляется —
+// материализацию несёт per-entry frame[].mode (mechanism = поле ПРЕСЕТА, DEVOPSER-169).
 const KNOWN_KINDS = new Set(["preset", "plugin"]);
 // Режимы доставки контента плагина = словарь хендлеров DISPATCH (exact|seed|block|pins|merge).
 const KNOWN_MODES = new Set(Object.keys(DISPATCH));
@@ -425,8 +425,9 @@ function vendoredGitFlowMeta() {
 // Валидация метаданных капабилити — ОБЩАЯ для preset и plugin (DEVOPSER-162, обобщение
 // validatePresetMeta). kind ∈ {preset,plugin}; target ∈ переданный набор известных (для плагина
 // набор ОТКРЫТ регистрацией — DEVOPSER-165, поэтому targets приходит снаружи, валидатор не
-// знает, откуда набор); mechanism-enum зависит от kind. Для плагина — плюс plugin-shape
-// (contentRoot + frame). Contract-first: невалидные метаданные → плагин/пресет не грузится.
+// знает, откуда набор); mechanism-enum — только для пресета (у плагина mechanism вне контракта,
+// DEVOPSER-169). Для плагина — плюс plugin-shape (contentRoot + frame). Contract-first:
+// невалидные метаданные → плагин/пресет не грузится.
 function validateMeta(label, meta, targets) {
   const errors = [];
   const kind = meta.kind ?? "preset";
@@ -436,11 +437,12 @@ function validateMeta(label, meta, targets) {
   }
   if (!targets.has(meta.target))
     errors.push(`${label}: target '${meta.target}' ∉ известные {${[...targets].join(", ")}}`);
-  // mechanism: пресет потребляется тулингом (extends/import/read); плагин доставляет контент
-  // режимом DISPATCH (exact/seed/block/pins).
-  const mechEnum = kind === "plugin" ? KNOWN_MODES : KNOWN_MECHANISMS;
-  if (meta.mechanism && !mechEnum.has(meta.mechanism))
-    errors.push(`${label}: mechanism '${meta.mechanism}' ∉ {${[...mechEnum].join(", ")}}`);
+  // mechanism — поле ПРЕСЕТА (extends|import|read: КАК пресет потребляется тулингом). У плагина
+  // НЕ объявляется — материализацию полностью несёт per-entry frame[].mode; top-level mechanism
+  // ничего не драйвит → вестигиально (present → игнор, НЕ ошибка). DEVOPSER-169, knowledger
+  // DEVOPSER-6. Валидируем mechanism ТОЛЬКО для пресета.
+  if (kind !== "plugin" && meta.mechanism && !KNOWN_MECHANISMS.has(meta.mechanism))
+    errors.push(`${label}: mechanism '${meta.mechanism}' ∉ {${[...KNOWN_MECHANISMS].join(", ")}}`);
   if (kind === "plugin") errors.push(...validatePluginShape(label, meta));
   return errors;
 }
