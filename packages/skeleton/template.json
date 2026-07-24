@@ -23,10 +23,11 @@
   "block": [{ "src": "gitignore-block", "dest": ".gitignore", "mode": "block" }],
   "merge": [
     {
-      "$comment": "DEVOPSER-187: MANAGED merge-фрагмент (mode:merge DEVOPSER-170) канон-инфры devcontainer.json — volume-native полнота (secrets/pnpm/registry mounts + containerEnv-wiring + --add-host), которая КАСКАДИТ потребителям через drift. devcontainer.json ТАКЖЕ seed (init-only полный шаблон): seed создаёт файл на чистом репо, merge догоняет стоячих потребителей (устаревший манифест без secrets/env → drift-check краснеет → init синкает; схлопывает рассинхрон «манифест ↔ живой контейнер»). Порядок в init: seed → merge (fresh: seed пишет файл с теми же значениями → merge no-op). Workspace-том/network/alias/restart — НЕ в манифесте (ставит провизионер devbox.sh). ОГРАНИЧЕНИЕ: array-replace mounts/runArgs — продукт-специфичное расширение массивов пойдёт в дрейф (флаг architect: array-union primitive под будущее).",
+      "$comment": "DEVOPSER-187/191: MANAGED merge-фрагмент (mode:merge DEVOPSER-170) канон-инфры devcontainer.json — volume-native полнота (secrets/pnpm/registry mounts + containerEnv-wiring + --add-host), которая КАСКАДИТ потребителям через drift. devcontainer.json ТАКЖЕ seed (init-only полный шаблон): seed создаёт файл на чистом репо, merge догоняет стоячих потребителей (устаревший манифест без secrets/env → drift-check краснеет → init синкает; схлопывает рассинхрон «манифест ↔ живой контейнер»). Порядок в init: seed → merge (fresh: seed пишет файл с теми же значениями → merge no-op). Workspace-том/network/alias/restart — НЕ в манифесте (ставит провизионер devbox.sh). unionArrays (DEVOPSER-191): mounts/runArgs мержатся array-UNION (managed канон-элементы энфорсятся по ключу target/флаг, продукт-элементы напр. tasker-data сосуществуют и НЕ дрейфят) — co-owned массивы не теряют продуктовое; скалярные листья (containerEnv-ключи) — прежний replace.",
       "src": "devcontainer-fragment.json",
       "dest": ".devcontainer/devcontainer.json",
-      "mode": "merge"
+      "mode": "merge",
+      "unionArrays": ["mounts", "runArgs"]
     }
   ],
   "pins": [

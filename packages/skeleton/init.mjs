@@ -285,11 +285,56 @@ function applyPins(e, { target, check, drift, actions, name }) {
 // dest = JSON-файл, который потребитель ТОЖЕ правит (напр. .claude/settings.json).
 const isMergeObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
-// deep-merge фрагмента в base: object → рекурсия; НЕ-object (скаляр/массив) → значение фрагмента
-// АВТОРИТЕТНО (replace managed-листа). base-ключи вне фрагмента сохраняются (зона потребителя).
-function deepMerge(base, frag) {
+// Идентичность элемента массива для array-UNION (DEVOPSER-191): union по КЛЮЧУ, не по полной
+// строке — managed канон-элементы энфорсятся, продукт-элементы сосуществуют. Ключ per-массив:
+//   mounts  — точка монтирования (target/destination уникальна; два mount на один target = конфликт).
+//             Строковая (`source=…,target=…,type=volume`) И объектная ({source,target,type}) формы.
+//   runArgs — флаг-ключ (`--add-host=…` → `--add-host`): managed-флаги энфорсятся, продукт-флаги живут.
+function mountTarget(m) {
+  if (isMergeObj(m)) return m.target ?? m.destination ?? m.dst ?? JSON.stringify(m);
+  const s = String(m);
+  const mt = s.match(/(?:^|,)\s*(?:target|destination|dst)=([^,]+)/);
+  return mt ? mt[1].trim() : s; // без target — вся строка как идентичность (fallback)
+}
+function flagKey(a) {
+  const s = String(a);
+  const i = s.indexOf("=");
+  return i === -1 ? s : s.slice(0, i); // `--add-host=host…` → `--add-host`
+}
+const ARRAY_IDENTITY = { mounts: mountTarget, runArgs: flagKey };
+// Union-массив (DEVOPSER-191): СОХРАНЯЕТ порядок потребителя, managed-элемент по совпадающему
+// ключу АВТОРИТЕТЕН (энфорс канон-формы) IN-PLACE, недостающие managed — в конец (порядок фрагмента).
+// Идемпотентно: на уже-union'ленном манифесте result == current → no-op/no-drift. Продукт-элементы
+// (ключ вне managed-set) сохраняются как есть → не дрейфят.
+function unionArray(current, frag, keyOf) {
+  const cur = Array.isArray(current) ? current : [];
+  const fragByKey = new Map(frag.map((el) => [keyOf(el), el]));
+  const seen = new Set();
+  const out = [];
+  for (const el of cur) {
+    const k = keyOf(el);
+    if (fragByKey.has(k)) {
+      out.push(fragByKey.get(k)); // managed-форма авторитетна (энфорс)
+      seen.add(k);
+    } else {
+      out.push(el); // продукт-элемент сохранён на своём месте
+    }
+  }
+  for (const el of frag) if (!seen.has(keyOf(el))) out.push(el); // недостающие managed — в конец
+  return out;
+}
+
+// deep-merge фрагмента в base: object → рекурсия; массив в `unionKeys` → array-UNION (managed ∪
+// продукт, DEVOPSER-191); прочий массив/скаляр → значение фрагмента АВТОРИТЕТНО (replace managed-листа).
+// base-ключи вне фрагмента сохраняются (зона потребителя). unionKeys назначается ЯВНО (template.json
+// merge-элемент `unionArrays`) — для скалярных списков (order/hooks-массивы) replace остаётся верным.
+function deepMerge(base, frag, unionKeys = new Set()) {
   const out = isMergeObj(base) ? { ...base } : {};
-  for (const [k, v] of Object.entries(frag)) out[k] = isMergeObj(v) ? deepMerge(out[k], v) : v;
+  for (const [k, v] of Object.entries(frag)) {
+    if (Array.isArray(v) && unionKeys.has(k))
+      out[k] = unionArray(out[k], v, ARRAY_IDENTITY[k] ?? ((el) => el));
+    else out[k] = isMergeObj(v) ? deepMerge(out[k], v, unionKeys) : v;
+  }
   return out;
 }
 
@@ -302,7 +347,9 @@ function applyMerge(e, { target, check, drift, actions }) {
   const raw = readTarget(path);
   const fragment = JSON.parse(readEtalon(e.src, e.root));
   const current = raw === null ? {} : JSON.parse(raw);
-  const expected = deepMerge(current, fragment);
+  // unionArrays (DEVOPSER-191): назначенные массивы (mounts/runArgs) мержатся UNION'ом (managed ∪
+  // продукт), а не replace — co-owned devcontainer.json не теряет продукт-mount (напр. tasker-data).
+  const expected = deepMerge(current, fragment, new Set(e.unionArrays ?? []));
   if (JSON.stringify(current) === JSON.stringify(expected)) return;
   if (check)
     drift.push(
