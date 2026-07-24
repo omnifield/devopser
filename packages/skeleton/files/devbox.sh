@@ -114,16 +114,20 @@ ensure_workspace_volume() {
   fi
   echo "[devbox] том $WORKSPACE_VOLUME пуст/отсутствует — создаю + git-clone $REPO_URL…" >&2
   dk volume create "$WORKSPACE_VOLUME" >/dev/null
-  # Клон В ТОМ: creds (gitconfig/gh) из тома omnifield-secrets (ro); bootstrap-образ несёт git.
-  dk run --rm \
+  # Клон В ТОМ под ROOT (`-u 0`): свежий named-том создаётся docker'ом root-owned, дефолтный юзер
+  # образа (vscode/1000) в него НЕ пишет → `git clone` падал бы `.../.git: Permission denied`
+  # (живой host-smoke tasker 2026-07-24, DEVOPSER-192). creds (gitconfig/gh из omnifield-secrets ro)
+  # root читает (владелец-агностик). bootstrap-образ несёт git.
+  dk run --rm -u 0 \
     -v "$WORKSPACE_VOLUME:$WORKDIR" \
     -v "omnifield-secrets:/home/vscode/.secrets:ro" \
     -e "GIT_CONFIG_GLOBAL=/home/vscode/.secrets/gitconfig" \
     -e "GH_CONFIG_DIR=/home/vscode/.secrets/gh" \
     "$BOOTSTRAP_IMAGE" \
     git clone "$REPO_URL" "$WORKDIR"
-  # Свежий named-том root-owned → chown на vscode(1000) (гага пилота brainer 2026-07-24).
-  dk run --rm -v "$WORKSPACE_VOLUME:$WORKDIR" "$BOOTSTRAP_IMAGE" \
+  # Клон root-owned → chown на vscode(1000) — тоже под ROOT (`-u 0`): 1000 не chown'ит root-owned
+  # (гага пилота brainer 2026-07-24). Порядок: clone(root) → chown(root→1000).
+  dk run --rm -u 0 -v "$WORKSPACE_VOLUME:$WORKDIR" "$BOOTSTRAP_IMAGE" \
     chown -R 1000:1000 "$WORKDIR"
 }
 

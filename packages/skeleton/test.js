@@ -405,6 +405,37 @@ test("recover.sh — managed exact exec (создан, 0755); devbox.sh volume-�
   }
 });
 
+// --- DEVOPSER-192: bootstrap clone/chown под root (-u 0) — свежий том root-owned ------------
+
+test("devbox.sh: оба bootstrap-run (clone+chown) под root (-u 0); финальный create — юзер образа (DEVOPSER-192)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0); // материализует scripts/devbox.sh + .devcontainer (эмиттер-манифест)
+    // Гоняем РЕАЛЬНЫЙ материализованный devbox.sh в DRY (docker не исполняется; user-флаг виден в печати).
+    const r = spawnSync("sh", [join(repo, "scripts/devbox.sh"), "up", "testrepo"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, DEVBOX_DRY_RUN: "1", DEVBOX_EMITTER_LOCAL: "1" },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const lines = r.stderr.split("\n"); // dry-печать docker-команд → stderr
+    // git-clone bootstrap-run под root: свежий named-том root-owned, 1000 не пишет (Permission denied).
+    const clone = lines.find((l) => l.includes("git clone"));
+    assert.ok(clone, "clone-команда напечатана");
+    assert.match(clone, /docker run --rm -u 0\b/, "clone bootstrap-run под -u 0");
+    // chown bootstrap-run под root: 1000 не chown'ит root-owned клон.
+    const chown = lines.find((l) => l.includes("chown -R 1000:1000"));
+    assert.ok(chown, "chown-команда напечатана");
+    assert.match(chown, /docker run --rm -u 0\b/, "chown bootstrap-run под -u 0");
+    // Финальный create — БЕЗ -u 0 (юзер образа vscode; файлы уже 1000-owned после chown).
+    const create = lines.find((l) => l.includes("docker create"));
+    assert.ok(create, "create-команда напечатана");
+    assert.doesNotMatch(create, /\s-u 0\b/, "финальный docker create — дефолтный юзер образа (без -u 0)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 // --- DEVOPSER-191: mode:merge array-UNION для co-owned mounts/runArgs -----------------------
 
 test("merge union: продукт-mount/runArg сохраняются, managed канон энфорсится (DEVOPSER-191)", () => {
