@@ -63,6 +63,7 @@ function printVersion() {
 const TEMPLATE = JSON.parse(readFileSync(join(PKG_DIR, "template.json"), "utf8"));
 const MANAGED = TEMPLATE.managed; // mode exact
 const BLOCK = TEMPLATE.block; // mode block (.gitignore splice)
+const MERGE = TEMPLATE.merge ?? []; // mode merge (JSON-фрагмент в co-owned JSON, DEVOPSER-170/187)
 const PINS = TEMPLATE.pins; // mode pins (package.json merge)
 const COMMON_TEMPLATES = TEMPLATE.templates.common; // mode seed
 const NODE_TEMPLATES = TEMPLATE.templates.node; // mode seed
@@ -789,11 +790,15 @@ function main() {
         ...(hasPython ? PYTHON_TEMPLATES : []),
       ];
   // MANAGED тоже фильтруется по стеку (DEVOPSER-45): .husky/* — node-only (nx-хуки), не всем стекам.
+  // MERGE — ПОСЛЕ seed (DEVOPSER-187): devcontainer.json одновременно seed (init-only полный шаблон)
+  // и merge (managed канон-фрагмент, каскадит стоячим). На чистом init seed ПЕРВЫМ пишет файл (с теми
+  // же значениями фрагмента) → merge = no-op; в --check seed=[] → merge валидирует фрагмент.
   const frame = [
     ...MANAGED.filter((e) => inStack(e, stacks)),
     ...BLOCK,
     ...PINS.filter((e) => inStack(e, stacks)),
     ...seed,
+    ...MERGE.filter((e) => inStack(e, stacks)),
   ];
   for (const e of frame) DISPATCH[e.mode](e, ctx);
 

@@ -14,12 +14,21 @@
       "mode": "exact"
     },
     { "src": "devbox.sh", "dest": "scripts/devbox.sh", "exec": true, "mode": "exact" },
+    { "src": "recover.sh", "dest": "scripts/recover.sh", "exec": true, "mode": "exact" },
     { "src": "devbox-manifest.mjs", "dest": "scripts/devbox-manifest.mjs", "mode": "exact" },
     { "src": "devbox-publish.mjs", "dest": "scripts/devbox-publish.mjs", "mode": "exact" },
     { "src": "git-flow.mjs", "dest": "scripts/git-flow.mjs", "mode": "exact" },
     { "src": "git-flow.json", "dest": "git-flow.json", "mode": "exact" }
   ],
   "block": [{ "src": "gitignore-block", "dest": ".gitignore", "mode": "block" }],
+  "merge": [
+    {
+      "$comment": "DEVOPSER-187: MANAGED merge-фрагмент (mode:merge DEVOPSER-170) канон-инфры devcontainer.json — volume-native полнота (secrets/pnpm/registry mounts + containerEnv-wiring + --add-host), которая КАСКАДИТ потребителям через drift. devcontainer.json ТАКЖЕ seed (init-only полный шаблон): seed создаёт файл на чистом репо, merge догоняет стоячих потребителей (устаревший манифест без secrets/env → drift-check краснеет → init синкает; схлопывает рассинхрон «манифест ↔ живой контейнер»). Порядок в init: seed → merge (fresh: seed пишет файл с теми же значениями → merge no-op). Workspace-том/network/alias/restart — НЕ в манифесте (ставит провизионер devbox.sh). ОГРАНИЧЕНИЕ: array-replace mounts/runArgs — продукт-специфичное расширение массивов пойдёт в дрейф (флаг architect: array-union primitive под будущее).",
+      "src": "devcontainer-fragment.json",
+      "dest": ".devcontainer/devcontainer.json",
+      "mode": "merge"
+    }
+  ],
   "pins": [
     { "src": "package-template.json", "dest": "package.json", "stack": "node", "mode": "pins" }
   ],

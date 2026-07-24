@@ -312,6 +312,99 @@ test("frontend-devcontainer: pnpm-воркдир из repo-flow (не хардк
   }
 });
 
+// --- DEVOPSER-187/188: volume-native devcontainer (secrets/pnpm/env) + merge-каскад --------
+
+const FRAGMENT = () =>
+  JSON.parse(readFileSync(join(PKG_DIR, "files/devcontainer-fragment.json"), "utf8"));
+
+test("devcontainer seed = volume-native полный: secrets/pnpm/registry mounts + env-wiring + --add-host; host-bind/network НЕ в манифесте (DEVOPSER-187)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    const dc = readDevcontainer(repo);
+    // containerEnv-полнота (секрет-модель): канон-переменные наведены на secret-volume.
+    for (const k of Object.keys(FRAGMENT().containerEnv))
+      assert.match(dc.containerEnv[k], /^\/home\/vscode\/\.secrets/, `containerEnv.${k} → secret-volume`);
+    const mstr = JSON.stringify(dc.mounts);
+    assert.match(mstr, /omnifield-secrets/, "secrets-mount присутствует");
+    assert.match(mstr, /omnifield-pnpm-store/, "pnpm-store-mount присутствует");
+    assert.match(mstr, /omnifield-registry/, "registry-mount присутствует");
+    assert.deepEqual(dc.runArgs, ["--add-host=host.docker.internal:host-gateway"], "runArgs = только --add-host");
+    // network/alias/restart и host-bind workspace — НЕ в манифесте (ставит провизионер devbox.sh).
+    assert.ok(!("initializeCommand" in dc), "initializeCommand (network create) НЕ в манифесте — провизионер");
+    assert.ok(!dc.runArgs.some((a) => /--network/.test(a)), "--network НЕ в манифесте");
+    assert.ok(!("workspaceMount" in dc), "workspaceMount (host-bind) убран — workspace = том провизионера");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge-фрагмент = значения seed → на чистом init merge no-op, --check чист (DEVOPSER-187)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    const dc = readDevcontainer(repo);
+    const frag = FRAGMENT();
+    // Каждый лист фрагмента уже присутствует в seed-материализации (иначе merge дрейфил бы сразу).
+    assert.deepEqual(dc.runArgs, frag.runArgs, "runArgs фрагмента == seed");
+    assert.deepEqual(dc.mounts, frag.mounts, "mounts фрагмента == seed (порядок/строки)");
+    for (const [k, v] of Object.entries(frag.containerEnv))
+      assert.equal(dc.containerEnv[k], v, `containerEnv.${k} фрагмента == seed`);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 0, c.stdout + c.stderr);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge-каскад: стоячий манифест без secrets-mount/env → --check краснеет → init синкает (DEVOPSER-187)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    // Симулируем УСТАРЕВШИЙ потребитель (рассинхрон «манифест ↔ живой контейнер», гага DEVOPSER-188):
+    // выкидываем канон-инфру, сохраняя продукт-ключи (image/postCreate/customizations).
+    const dc = readDevcontainer(repo);
+    delete dc.containerEnv;
+    dc.mounts = ["source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume"];
+    const custom = "my-product-value";
+    dc.image = custom; // продукт-ключ, merge его НЕ трогает
+    writeFileSync(join(repo, ".devcontainer/devcontainer.json"), `${JSON.stringify(dc, null, 2)}\n`);
+    // drift-check краснеет на отсутствующем managed-фрагменте.
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "неполный манифест → exit 1");
+    assert.match(c.stderr, /devcontainer\.json/, "drift называет devcontainer.json");
+    // init синкает фрагмент обратно, СОХРАНЯЯ продукт-ключи (deep-merge, не overwrite).
+    assert.equal(run(repo).status, 0);
+    const fixed = readDevcontainer(repo);
+    assert.equal(fixed.containerEnv.CLAUDE_CONFIG_DIR, "/home/vscode/.secrets/claude", "env-wiring восстановлен");
+    assert.match(JSON.stringify(fixed.mounts), /omnifield-secrets/, "secrets-mount восстановлен");
+    assert.equal(fixed.image, custom, "продукт-ключ image сохранён (merge, не overwrite)");
+    assert.equal(run(repo, "--check").status, 0, "после синка --check чист");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("recover.sh — managed exact exec (создан, 0755); devbox.sh volume-модель (DEVOPSER-188)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    const rp = join(repo, "scripts/recover.sh");
+    assert.ok(existsSync(rp), "scripts/recover.sh материализован");
+    assert.equal(statSync(rp).mode & 0o777, 0o755, "recover.sh exec-бит 0755");
+    // recover.sh объявлен managed exact exec в манифесте рамки.
+    const e = TEMPLATE.managed.find((m) => m.dest === "scripts/recover.sh");
+    assert.ok(e && e.mode === "exact" && e.exec === true, "recover.sh = managed exact exec");
+    // devbox.sh переведён на named-volume workspace + fail-loud guard (DEVOPSER-188).
+    const devbox = readFileSync(join(repo, "scripts/devbox.sh"), "utf8");
+    assert.match(devbox, /WORKSPACE_VOLUME=/, "devbox.sh: workspace = named-volume");
+    assert.match(devbox, /guard_workspace/, "devbox.sh: fail-loud ext4-guard присутствует");
+    assert.doesNotMatch(devbox, /type=bind,source=\$REPO_ROOT/, "host-bind $REPO_ROOT убран");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 // --- DEVOPSER-53: gitleaks — единая точка пина, composite вместо 6× inline-curl ------------
 
 const CI_WORKFLOWS = ["web-ci.yml", "node-ci.yml", "go-ci.yml", "python-ci.yml"];
@@ -460,10 +553,11 @@ test("пресет В рамке → ok (node-пресет на node-репо; p
 
 // --- Apply-режимы (DEVOPSER-99): mode объявлен + диспатчится -------------------
 
-const MODES = new Set(["exact", "seed", "block", "pins"]);
+const MODES = new Set(["exact", "seed", "block", "pins", "merge"]);
 const allFrameEntries = () => [
   ...TEMPLATE.managed,
   ...TEMPLATE.block,
+  ...(TEMPLATE.merge ?? []),
   ...TEMPLATE.pins,
   ...TEMPLATE.templates.common,
   ...TEMPLATE.templates.node,
@@ -471,9 +565,9 @@ const allFrameEntries = () => [
   ...TEMPLATE.templates.python,
 ];
 
-test("каждая frame-запись объявляет валидный mode (exact|seed|block|pins)", () => {
+test("каждая frame-запись объявляет валидный mode (exact|seed|block|pins|merge)", () => {
   for (const e of allFrameEntries()) {
-    assert.ok(MODES.has(e.mode), `запись ${e.dest}: mode '${e.mode}' вне {exact,seed,block,pins}`);
+    assert.ok(MODES.has(e.mode), `запись ${e.dest}: mode '${e.mode}' вне {exact,seed,block,pins,merge}`);
   }
   // Ожидаемая раскладка режимов по группам (рамка enforced vs сид).
   assert.ok(
