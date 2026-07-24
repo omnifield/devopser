@@ -950,6 +950,10 @@ test("release.yml НЕ использует pnpm/action-setup; pnpm ставит
     1,
     "версия pnpm — единая точка пина (одно вхождение литерала)",
   );
+  // Install-if-owning-workspace (вариант A architect): build-bearing пакету нужен install ЕГО
+  // workspace. Есть корневой package.json → pnpm install; go-корень-без-него → скип.
+  assert.match(rel, /if \[ -f package\.json \]/, "install гейтится наличием корневого node-workspace");
+  assert.match(rel, /pnpm install --frozen-lockfile/, "корневой workspace → pnpm install (prepublishOnly-сборка резолвится)");
 });
 
 test("release.yml материализуется на node-корне С корневым packageManager без action-setup-конфликта (DEVOPSER-196)", () => {

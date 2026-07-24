@@ -39,8 +39,20 @@ jobs:
           scope: '@omnifield'
       # Глобальный pnpm БЕЗ pnpm/action-setup — не коллизит с корневым packageManager (DEVOPSER-196).
       - run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+      # Install-if-owning-workspace (DEVOPSER-196, вариант A architect): пакет издаётся из ЕГО
+      # workspace; build-bearing пакету (напр. @omnifield/contract-manifest с prepublishOnly:
+      # tsc/emit-schema) нужен node_modules ЕГО workspace. Есть корневой node-workspace
+      # (root package.json — node-корень devopser/потребители) → install. go-корень-без-корневого-
+      # workspace → скип (buildless публикуется как есть; workspace-в-подпапке — DEVOPSER-195).
+      - name: Install workspace deps (if root node-workspace)
+        run: |
+          if [ -f package.json ]; then
+            pnpm install --frozen-lockfile
+          else
+            echo "Нет корневого node-workspace — install скип (buildless публикуется как есть)."
+          fi
       # Скан ПО ПАКЕТАМ (не по корню): издаёт все @omnifield/* не-private где бы ни лежали,
-      # каждый идемпотентно (дубликат → skip). Нет пакетов → no-op. Корневой install не нужен.
+      # каждый идемпотентно (дубликат → skip). Нет пакетов → no-op.
       - run: node scripts/publish-idempotent.mjs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
