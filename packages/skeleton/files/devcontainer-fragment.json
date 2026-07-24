@@ -1,0 +1,14 @@
+{
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.secrets/claude",
+    "NPM_CONFIG_USERCONFIG": "/home/vscode/.secrets/npmrc",
+    "GIT_CONFIG_GLOBAL": "/home/vscode/.secrets/gitconfig",
+    "GH_CONFIG_DIR": "/home/vscode/.secrets/gh"
+  },
+  "mounts": [
+    "source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume",
+    "source=omnifield-secrets,target=/home/vscode/.secrets,type=volume",
+    "source=omnifield-registry,target=/omnifield-registry,type=volume"
+  ]
+}

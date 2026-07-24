@@ -37,7 +37,7 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 |---|---|---|---|
 | `exact` | точная копия эталона; `exec:true` → бит `0755` | **краснеет** на любом расхождении (уехать нельзя) | `.husky/*`, `scripts/devbox-*`, `.editorconfig` |
 | `block` | splice managed-блока между маркерами в co-owned **текст** (репо ТОЖЕ правит) | **краснеет** только на managed-блоке (свои строки репо не трогаются) | `.gitignore` |
-| `merge` | JSON-aware deep-merge managed-фрагмента в co-owned **JSON** (репо ТОЖЕ правит) | **краснеет** только на листьях фрагмента (прочие ключи — зона репо) | `.claude/settings.json` (`hooks`-фрагмент) |
+| `merge` | JSON-aware deep-merge managed-фрагмента в co-owned **JSON** (репо ТОЖЕ правит) | **краснеет** только на листьях фрагмента (прочие ключи — зона репо) | `.devcontainer/devcontainer.json` (канон-инфра-фрагмент, DEVOPSER-187) · `.claude/settings.json` (`hooks`-фрагмент) |
 | `pins` | merge отдельных ключей; остальной файл — зона репо | **краснеет** только на этих ключах | `package.json` (`packageManager`+`engines.node`) |
 | `seed` | создать, только если отсутствует | НЕ drift — репо легитимно правит | `nx.json`, `biome.json`, `.golangci.yml`, `.devcontainer/*` |
 
@@ -46,6 +46,21 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 не чистые данные): `block` правит co-owned текст, `merge` — co-owned JSON-структуру, `pins` —
 захардкоженные ключи; `mode` лишь **выбирает** хендлер. Расширить рамку новым режимом = добавить
 хендлер в `DISPATCH` + объявить `mode` у записей, не ветвить логику по имени файла.
+
+**`.devcontainer/devcontainer.json` — seed + merge (DEVOPSER-187).** Файл ОДНОВРЕМЕННО `seed` (init-only
+полный шаблон для чистого репо) и `merge` (managed канон-инфра-фрагмент: `omnifield-secrets`/pnpm/
+`omnifield-registry` mounts + `containerEnv`-wiring `CLAUDE_CONFIG_DIR`/`NPM_CONFIG_USERCONFIG`/
+`GIT_CONFIG_GLOBAL`/`GH_CONFIG_DIR` + `--add-host`). seed создаёт файл на чистом репо; **merge КАСКАДИТ
+канон-инфру стоячим потребителям** (устаревший манифест без secrets/env → drift-check краснеет → `init`
+синкает) — схлопывает рассинхрон «манифест ↔ живой контейнер» (гага DEVOPSER-188). Порядок в `init`:
+seed → merge (на fresh значения совпадают → merge no-op; в `--check` seed отключён → merge валидирует
+фрагмент). Workspace-том, network/alias/restart — **НЕ в манифесте** (ставит провизионер `devbox.sh`,
+канон-инвариант; VS Code «Reopen in Container» — деградированный fallback, gateway-сеть довешивает
+`devbox-session.sh`). **Ограничение (флаг architect):** `merge` array-replace (`mounts`/`runArgs`
+авторитетны, DEVOPSER-170) — продукт НЕ расширяет эти массивы манифестом без дрейфа; `containerEnv`
+(object) мержится мягко (продукт добавляет свой env свободно). Появится продукт-специфичный
+`mount`/`runArg` → пересмотр (array-union primitive ИЛИ провизионер-инвариант). Целевой
+`devcontainer.json` должен быть чистым JSON (не JSONC — `applyMerge` = `JSON.parse`).
 
 ## Пресет-контракт (`slot` → пресет, DEVOPSER-98)
 
@@ -339,9 +354,10 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 |---|---|
 | `.editorconfig` · `.gitattributes` · `.npmrc` | точная копия эталона |
 | `.husky/pre-commit` · `.husky/pre-push` | точная копия эталона — **node-only** (nx-хуки; go/frontend не несут) |
-| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/devbox-manifest.mjs` · `scripts/devbox-publish.mjs` · `scripts/git-flow.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже; `git-flow.mjs` — git-инструмент, DEVOPSER-106) |
+| `scripts/devbox-services.mjs` · `scripts/devbox-session.sh` · `scripts/devbox.sh` · `scripts/recover.sh` · `scripts/devbox-manifest.mjs` · `scripts/devbox-publish.mjs` · `scripts/git-flow.mjs` | точная копия эталона (`.sh` — с exec-битом `0755`, см. ниже; `git-flow.mjs` — git-инструмент, DEVOPSER-106; `recover.sh` — ordered bring-up, DEVOPSER-188) |
 | `git-flow.json` | вендоренный git-flow-пресет (language-agnostic, любой стек; DEVOPSER-113) — точная копия эталона |
 | `.gitignore` | managed-блок между маркерами `>>> omnifield-skeleton` — ниже блока репо дописывает своё |
+| `.devcontainer/devcontainer.json` (**merge-фрагмент**) | канон-инфра (secrets/pnpm/registry mounts + containerEnv-wiring + `--add-host`) — deep-merge managed-фрагмента (DEVOPSER-187/170); краснеет только на листьях фрагмента, продукт-ключи (image/postCreate/customizations) — зона репо. Сам файл ТАКЖЕ seed (init-only полный шаблон) |
 | `package.json` | пины `packageManager` + `engines.node` равны эталону |
 
 `nx.json` / `biome.json` / `.devcontainer/devcontainer.json` / `devbox.services.json` /
@@ -351,8 +367,10 @@ node <devopser>/packages/skeleton/init.mjs --check <target>
 `@omnifield/nx-preset`; набор dev-сервисов в `devbox.services.json` = зона продукт-owner'а;
 пути/движок БД в `sqlc.yaml` — зона go-owner'а). CI-caller'ы init-only, чтобы догфуд-ci
 devopser (локальный `uses: ./...`) не конфликтовал с раскатанным `@main`-caller'ом.
-Плейсхолдер `__NAME__` в шаблонах init заменяет на `basename` репо (`package.json` name,
-devcontainer `--network-alias` — single-origin).
+Плейсхолдер `__NAME__` в шаблонах init заменяет на `basename` репо (`package.json` name).
+**Исключение — `.devcontainer/devcontainer.json`:** его ТЕЛО seed (init-only, продукт правит
+image/postCreate/customizations), но **канон-инфра-фрагмент** (secrets/pnpm/registry mounts +
+`containerEnv`-wiring + `--add-host`) — **merge-managed** (drift-caskad, DEVOPSER-187; см. «Режимы»).
 
 ## Dev-сервисы + вход агентом (brief `briefs/devbox-first-run-dx-design.md`)
 
@@ -382,12 +400,28 @@ devcontainer `--network-alias` — single-origin).
   [scope]` резолвит devbox-контейнер репо → `docker exec -it -e OMNIFIELD_SCOPE=<scope> … claude`,
   дёргает idempotent `devbox-services up` (safety-net). Тонкая session-entry, контейнер НЕ создаёт.
 - **`scripts/devbox.sh`** (MANAGED, exec `0755`) + **`scripts/devbox-manifest.mjs`** (MANAGED, zero-deps)
-  — headless-провижинер (Шаг 2): `devbox.sh up|down|recreate` поднимает/пересоздаёт devbox репо из
-  его `.devcontainer/devcontainer.json` по канону ОДНОЙ командой (containers-only, ноль ручных
-  `docker run`). Канон-инвариант (сеть gateway alias=имя, единственный bind своего репо,
-  `--restart unless-stopped`, ноль host-портов) ставит сам провизионер; продукт-переменное
-  (image/env/volumes/hooks) — из манифеста, который парсит `devbox-manifest.mjs` node'ом внутри
-  образа (единый источник, ноль дублирования). `down`/`recreate` данные (volumes) сохраняют.
+  — headless-провижинер под **VOLUME-workspace-модель** (DEVOPSER-188, ADR-16): `devbox.sh up|down|
+  recreate <repo>` поднимает/пересоздаёт devbox ОДНОЙ командой (containers-only, ноль ручных
+  `docker run`). Рабочая копия репо живёт в **named-volume `<repo>-workspace`** (ext4), НЕ в host-bind
+  папке WSL — на хосте кода репо больше нет (истина в томе). Свежий/пустой том **наполняется
+  git-клоном** (bootstrap-контейнер; creds gitconfig/gh из тома `omnifield-secrets`), затем `chown`
+  на vscode(1000) (свежий named-том root-owned — гага пилота brainer). `<repo>` = **аргумент**
+  (имя тома/сети-alias/контейнера), НЕ `basename(pwd)`. Манифест ЧИТАЕТСЯ **ИЗ ТОМА** — провижн не
+  дублирует ручной `docker run`. Канон-инвариант (workspace-том → `/workspaces/<repo>`, сеть gateway
+  alias=имя, `--restart unless-stopped`, ноль host-портов) ставит сам провизионер; продукт-переменное
+  (image/containerEnv/mounts/hooks) — из манифеста, который парсит `devbox-manifest.mjs`. `down`/
+  `recreate` том/данные (workspace/secrets/pnpm) сохраняют; повторный `up` — no-op (том не переклонивается).
+  **fail-loud ext4-guard** (ЯДРО анти-инцидента 2026-07-24): после `up` сверяет `findmnt` `/workspaces/
+  <repo>` — `tmpfs` ИЛИ пустой том → НЕ оставляет тихую пустышку, падает громко + подсказывает
+  `recreate` (гонка host-bind→tmpfs схлопывается сама: том всегда ext4; guard — страховка + ловит
+  деградацию). Тест-хуки: `DEVBOX_DRY_RUN=1` (печать docker-команд), `DEVBOX_EMITTER_LOCAL=1` (эмиттер
+  из host-манифеста), `DEVBOX_BOOTSTRAP_IMAGE` (образ клона/эмиттера).
+- **`scripts/recover.sh`** (MANAGED, exec `0755`, DEVOPSER-188) — ordered host-driven bring-up
+  девбоксов ПОСЛЕ готовности WSL/докера (интерим-подъём после ребута): `recover.sh <repo> …` ждёт
+  docker-демон → `devbox.sh up` для каждого по порядку. `--restart unless-stopped` поднимал девбоксы
+  РАНЬШЕ готовности WSL — корень tmpfs-гонки host-bind; в volume-модели том всегда ext4 → авто-рестарт
+  безопасен, recover.sh даёт ДЕТЕРМИНИРОВАННЫЙ ordered порядок. Generic (список продуктов — аргумент,
+  ноль per-репо-данных). Минимальный не-костыльный вариант (guard в `devbox.sh` — вторая линия).
 - **`scripts/devbox-publish.mjs`** (MANAGED, zero-deps) — publish-volume (Шаг 5 §A,
   `briefs/feedback-hub-core-as-hub-under-isolation.md`): на старте кладёт `omnifield.yaml`
   продукта в общий named-volume `omnifield-registry` под `<name>.yaml` (`<name>` = basename
