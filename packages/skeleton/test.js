@@ -405,6 +405,102 @@ test("recover.sh — managed exact exec (создан, 0755); devbox.sh volume-�
   }
 });
 
+// --- DEVOPSER-191: mode:merge array-UNION для co-owned mounts/runArgs -----------------------
+
+test("merge union: продукт-mount/runArg сохраняются, managed канон энфорсится (DEVOPSER-191)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0); // seed+merge → канон mounts/runArgs
+    const dc = readDevcontainer(repo);
+    // Продукт добавляет свой data-mount + runArg (живой кейс tasker-data), сохраняя канон.
+    dc.mounts.push("source=tasker-data,target=/data/tasker,type=volume");
+    dc.runArgs.push("--shm-size=2g");
+    writeFileSync(join(repo, ".devcontainer/devcontainer.json"), `${JSON.stringify(dc, null, 2)}\n`);
+    // --check: продукт-элементы НЕ дрейф (managed present) → чисто.
+    assert.equal(run(repo, "--check").status, 0, "продукт-mount/runArg не краснит drift");
+    // init идемпотентен: продукт сохранён + канон на месте.
+    assert.equal(run(repo).status, 0);
+    const after = readDevcontainer(repo);
+    const mstr = JSON.stringify(after.mounts);
+    assert.match(mstr, /tasker-data/, "продукт-mount сохранён (union, НЕ replace)");
+    assert.match(mstr, /omnifield-secrets/, "managed secrets-mount на месте");
+    assert.ok(after.runArgs.includes("--shm-size=2g"), "продукт-runArg сохранён");
+    assert.ok(
+      after.runArgs.includes("--add-host=host.docker.internal:host-gateway"),
+      "managed --add-host на месте",
+    );
+    assert.equal(run(repo, "--check").status, 0, "после init повторный --check чист (идемпотентно)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge union: отсутствие managed-mount краснит; init восстанавливает, продукт цел (DEVOPSER-191)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    const dc = readDevcontainer(repo);
+    // Продукт-mount есть, но канон secrets/registry выкинуты (стоячий/адоптящий манифест).
+    dc.mounts = [
+      "source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume",
+      "source=tasker-data,target=/data/tasker,type=volume",
+    ];
+    writeFileSync(join(repo, ".devcontainer/devcontainer.json"), `${JSON.stringify(dc, null, 2)}\n`);
+    const c = run(repo, "--check");
+    assert.equal(c.status, 1, "отсутствие managed-mount → drift red");
+    assert.match(c.stderr, /devcontainer\.json/, "drift называет devcontainer.json");
+    // init восстанавливает managed (secrets/registry), СОХРАНЯЯ продукт tasker-data.
+    assert.equal(run(repo).status, 0);
+    const mstr = JSON.stringify(readDevcontainer(repo).mounts);
+    assert.match(mstr, /omnifield-secrets/, "secrets восстановлен");
+    assert.match(mstr, /omnifield-registry/, "registry восстановлен");
+    assert.match(mstr, /tasker-data/, "продукт tasker-data сохранён при восстановлении");
+    assert.equal(run(repo, "--check").status, 0, "после init drift чист");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge union: совпадение target → managed-форма авторитетна (энфорс канон-mount) DEVOPSER-191", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    const dc = readDevcontainer(repo);
+    // Потребитель испортил канон secrets-mount (ТОТ ЖЕ target, кривой source/type) → managed энфорсит.
+    dc.mounts = dc.mounts.map((m) =>
+      m.includes("target=/home/vscode/.secrets")
+        ? "source=WRONG,target=/home/vscode/.secrets,type=bind"
+        : m,
+    );
+    writeFileSync(join(repo, ".devcontainer/devcontainer.json"), `${JSON.stringify(dc, null, 2)}\n`);
+    assert.equal(run(repo, "--check").status, 1, "кривой managed-mount (тот же target) → drift");
+    assert.equal(run(repo).status, 0);
+    const mstr = JSON.stringify(readDevcontainer(repo).mounts);
+    assert.match(mstr, /source=omnifield-secrets,target=\/home\/vscode\/\.secrets/, "канон-форма энфорснута");
+    assert.doesNotMatch(mstr, /WRONG/, "кривой source вытеснен managed-формой (union по target)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("merge union: containerEnv-ключи — прежний replace-лист (НЕ union); managed авторитетен, продукт цел (DEVOPSER-191)", () => {
+  const repo = mkRepo();
+  try {
+    assert.equal(run(repo).status, 0);
+    const dc = readDevcontainer(repo);
+    dc.containerEnv.CLAUDE_CONFIG_DIR = "/wrong/path"; // managed-лист уехал
+    dc.containerEnv.PRODUCT_ENV = "keep"; // продукт-ключ (object-merge сохраняет)
+    writeFileSync(join(repo, ".devcontainer/devcontainer.json"), `${JSON.stringify(dc, null, 2)}\n`);
+    assert.equal(run(repo, "--check").status, 1, "уехавший managed containerEnv-ключ → drift (replace-лист)");
+    assert.equal(run(repo).status, 0);
+    const env = readDevcontainer(repo).containerEnv;
+    assert.equal(env.CLAUDE_CONFIG_DIR, "/home/vscode/.secrets/claude", "managed-лист replace (авторитетен)");
+    assert.equal(env.PRODUCT_ENV, "keep", "продукт-env-ключ сохранён (object deep-merge, не union/replace массива)");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 // --- DEVOPSER-53: gitleaks — единая точка пина, composite вместо 6× inline-curl ------------
 
 const CI_WORKFLOWS = ["web-ci.yml", "node-ci.yml", "go-ci.yml", "python-ci.yml"];

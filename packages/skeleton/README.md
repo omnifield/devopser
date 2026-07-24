@@ -56,11 +56,28 @@ Repo-skeleton D3 (`briefs/repo-skeleton-product.md`) + стек-осознанн
 seed → merge (на fresh значения совпадают → merge no-op; в `--check` seed отключён → merge валидирует
 фрагмент). Workspace-том, network/alias/restart — **НЕ в манифесте** (ставит провизионер `devbox.sh`,
 канон-инвариант; VS Code «Reopen in Container» — деградированный fallback, gateway-сеть довешивает
-`devbox-session.sh`). **Ограничение (флаг architect):** `merge` array-replace (`mounts`/`runArgs`
-авторитетны, DEVOPSER-170) — продукт НЕ расширяет эти массивы манифестом без дрейфа; `containerEnv`
-(object) мержится мягко (продукт добавляет свой env свободно). Появится продукт-специфичный
-`mount`/`runArg` → пересмотр (array-union primitive ИЛИ провизионер-инвариант). Целевой
-`devcontainer.json` должен быть чистым JSON (не JSONC — `applyMerge` = `JSON.parse`).
+`devbox-session.sh`). Целевой `devcontainer.json` должен быть чистым JSON (не JSONC — `applyMerge` =
+`JSON.parse`).
+
+**array-UNION для co-owned массивов (`mounts`/`runArgs`, DEVOPSER-191).** По умолчанию `merge` трактует
+массив как лист → **replace** (верно для скалярных списков — `containerEnv`-ключи, `hooks`-строки). Но
+`mounts`/`runArgs` **co-owned**: канон-инфра каскадится merge'ом, а продукт держит СВОИ элементы
+(напр. tasker mount `tasker-data → /data/tasker`). Replace убил бы продуктовые. Поэтому такие массивы
+помечаются **`unionArrays`** в merge-элементе `template.json` — они мержатся **UNION по ключу элемента**
+(managed канон-элементы энфорсятся, продуктовые сосуществуют и **НЕ дрейфят**):
+
+```jsonc
+{ "src": "devcontainer-fragment.json", "dest": ".devcontainer/devcontainer.json",
+  "mode": "merge", "unionArrays": ["mounts", "runArgs"] }
+```
+
+Ключ идентичности per-массив (`ARRAY_IDENTITY` в `init.mjs`): `mounts` → точка монтирования
+(`target=`/`destination`; совпал target → managed-форма авторитетна, энфорс канон-mount), `runArgs` →
+флаг-ключ (`--add-host=…` → `--add-host`). Union **сохраняет порядок потребителя** (managed-элемент
+in-place, недостающие managed — в конец) → идемпотентен. **Drift краснеет ТОЛЬКО** если managed-элемент
+отсутствует/отличается; продуктовые элементы вне managed-set — не дрейф. Массив БЕЗ `unionArrays` —
+прежний replace (managed-лист авторитетен). NB: канон-сторож `devbox-manifest.mjs` всё равно фейлит
+`--network`/`-p`/`-P` в `runArgs` — union его не отменяет.
 
 ## Пресет-контракт (`slot` → пресет, DEVOPSER-98)
 
