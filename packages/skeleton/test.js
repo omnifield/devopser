@@ -867,26 +867,67 @@ test("каждый пресет объявляет target = repo-config", () => 
   }
 });
 
-test("template.json таксономия: repo-config active, release declared, git-flow bound", () => {
+test("template.json таксономия: repo-config active, release active, git-flow bound (DEVOPSER-194)", () => {
   const t = TEMPLATE.targets;
   assert.ok(t, "template.json должен нести таксономию targets");
   assert.equal(t["repo-config"], "active");
-  assert.equal(t.release, "declared"); // пустая plug-in точка
+  assert.equal(t.release, "active"); // managed release-меха (release.yml + publish-idempotent)
   assert.equal(t["git-flow"], "bound"); // пресет привязан (DEVOPSER-103), процессор — следом
 });
 
-test("init репортит группировку по target (repo-config: nx,biome,vite; release/git-flow пусты)", () => {
+test("init репортит группировку по target (repo-config: nx,biome,vite; release: active — DEVOPSER-194)", () => {
   const repo = mkRepo();
   try {
     const r = run(repo);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /\[skeleton targets\]/, "репорт по target печатается");
     assert.match(r.stdout, /repo-config: nx, biome, vite/, "repo-config группирует свои slots");
-    assert.match(r.stdout, /release: —/, "release — declared-empty plug-in");
+    assert.match(r.stdout, /release: active/, "release активирован (не declared-empty «—»)");
+    assert.doesNotMatch(r.stdout, /release: —/, "«release: —» убран (DEVOPSER-194)");
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// --- DEVOPSER-194: release-меха managed, каскадит ВСЕМ репо без стек-гейта (kb:ADR-17) ---------
+
+const RELEASE_DESTS = [
+  ".github/workflows/release.yml",
+  "scripts/publish-idempotent.mjs",
+  "scripts/publish-idempotent.test.mjs",
+];
+
+test("release-меха объявлена managed (release.yml + publish-idempotent + тест), без стек-гейта", () => {
+  for (const dest of RELEASE_DESTS) {
+    const e = TEMPLATE.managed.find((m) => m.dest === dest);
+    assert.ok(e, `${dest} объявлен в managed`);
+    assert.equal(e.mode, "exact", `${dest} — exact (drift-managed)`);
+    assert.ok(!e.stack, `${dest} без стек-гейта (материализуется в любой репо)`);
+  }
+});
+
+for (const [label, setup] of [
+  ["node-корень", () => {}], // пустой репо → node-дефолт
+  ["go-корень", (repo) => writeFileSync(join(repo, "go.mod"), "module x\n")],
+  ["python-корень", (repo) => writeFileSync(join(repo, "pyproject.toml"), "[project]\nname='x'\n")],
+]) {
+  test(`release-меха материализована на стеке «${label}» (root-agnostic, DEVOPSER-194)`, () => {
+    const repo = mkRepo();
+    try {
+      setup(repo);
+      assert.equal(run(repo).status, 0);
+      for (const dest of RELEASE_DESTS)
+        assert.ok(existsSync(join(repo, dest)), `${dest} создан на стеке ${label}`);
+      // release.yml root-agnostic: пиннит версию, НЕ node-version-file из корня.
+      const rel = readFileSync(join(repo, ".github/workflows/release.yml"), "utf8");
+      assert.doesNotMatch(rel, /node-version-file:/, "release.yml не прибит к корневому package.json");
+      assert.match(rel, /node-version:\s*22/, "release.yml пиннит node-рантайм явно");
+      assert.equal(run(repo, "--check").status, 0, "release-меха drift чист после init");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+}
 
 test("пресет с unknown target → loud-fail (target вне таксономии)", () => {
   const repo = mkRepo();

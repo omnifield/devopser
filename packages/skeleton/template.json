@@ -18,7 +18,14 @@
     { "src": "devbox-manifest.mjs", "dest": "scripts/devbox-manifest.mjs", "mode": "exact" },
     { "src": "devbox-publish.mjs", "dest": "scripts/devbox-publish.mjs", "mode": "exact" },
     { "src": "git-flow.mjs", "dest": "scripts/git-flow.mjs", "mode": "exact" },
-    { "src": "git-flow.json", "dest": "git-flow.json", "mode": "exact" }
+    { "src": "git-flow.json", "dest": "git-flow.json", "mode": "exact" },
+    { "src": "release.yml", "dest": ".github/workflows/release.yml", "mode": "exact" },
+    { "src": "publish-idempotent.mjs", "dest": "scripts/publish-idempotent.mjs", "mode": "exact" },
+    {
+      "src": "publish-idempotent.test.mjs",
+      "dest": "scripts/publish-idempotent.test.mjs",
+      "mode": "exact"
+    }
   ],
   "block": [{ "src": "gitignore-block", "dest": ".gitignore", "mode": "block" }],
   "merge": [
@@ -65,9 +72,9 @@
   "plugins": null,
   "$plugins-comment": "Self-dogfood слот devopser (DEVOPSER-108/166, knowledger DEVOPSER-6): плагины на СВОЁМ репо (список refs 'name@^ver' ИЛИ null). Биндинг ЧУЖИХ продуктов — НЕ здесь, а в манифесте потребителя omnifield.yaml (plugins:[...], единственный путь; истина в манифестах, DEVOPSER-135). Публикуется null → у потребителей эффекта нет.",
   "targets": {
-    "$comment": "ТАКСОНОМИЯ таргетов (DEVOPSER-101): target = КАТЕГОРИЯ того, что пресет настраивает — ось группировки slots (slot=конкретный конфиг, target=его класс). Известные таргеты = ключи; init.mjs валит пресет с target ∉ этого набора (loud-fail). Статус: active = движок обрабатывает (repo-config: nx/biome/vite, npm-доставка); bound = пресет привязан+валидируется (git-flow: вендоренный git-flow.json, DEVOPSER-113 — language-agnostic, инструмент+rulesets по нему уже есть); declared = пустая plug-in точка (release, под будущее). Подключение — ДЕКЛАРАЦИЕЙ target в метаданных пресета, не спецкейсом в init.",
+    "$comment": "ТАКСОНОМИЯ таргетов (DEVOPSER-101): target = КАТЕГОРИЯ того, что настраивается — ось группировки slots (slot=конкретный конфиг, target=его класс). Известные таргеты = ключи; init.mjs валит пресет с target ∉ этого набора (loud-fail). Статус: active = движок материализует меху (repo-config: nx/biome/vite npm-пресетами; release: managed workflow release.yml + publish-idempotent.mjs — универсальная root-agnostic публикация @omnifield/*, kb:ADR-17/DEVOPSER-194, каскадит ВСЕМ репо без стек-гейта, no-op если нечего); bound = пресет привязан+валидируется (git-flow: вендоренный git-flow.json, DEVOPSER-113 — language-agnostic, инструмент+rulesets по нему уже есть); declared = пустая plug-in точка (под будущее). Подключение — ДЕКЛАРАЦИЕЙ target (в метаданных пресета ИЛИ managed-мехой движка), не спецкейсом в init.",
     "repo-config": "active",
-    "release": "declared",
+    "release": "active",
     "git-flow": "bound"
   },
   "ci": {
