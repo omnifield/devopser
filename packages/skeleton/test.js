@@ -929,6 +929,48 @@ for (const [label, setup] of [
   });
 }
 
+// --- DEVOPSER-196: release.yml отвязан от pnpm/action-setup (coupling с корневым packageManager) --
+// Регресс 194: `pnpm/action-setup` + version-input падает ERR_PNPM_BAD_PM_VERSION на репо с
+// корневым `packageManager`. 194 тестил ЛОГИКУ скана, но НЕ форму setup против packageManager —
+// регресс вскрылся только вживую. Этот блок ловит его на `--check`/CI, без живого publish.
+
+test("release.yml НЕ использует pnpm/action-setup; pnpm ставится run-шагом, пин в одной точке (DEVOPSER-196)", () => {
+  const rel = readFileSync(join(PKG_DIR, "files", "release.yml"), "utf8");
+  assert.doesNotMatch(
+    rel,
+    /uses:\s*pnpm\/action-setup/,
+    "action-setup коллизит с корневым packageManager (ERR_PNPM_BAD_PM_VERSION) — отвязан",
+  );
+  assert.match(rel, /npm install -g pnpm@/, "pnpm ставится root-agnostic run-шагом (npm -g)");
+  // Пин версии pnpm — ЕДИНАЯ точка (env PNPM_VERSION); литерал версии встречается ровно 1×.
+  const pin = rel.match(/PNPM_VERSION:\s*([\d.]+)/);
+  assert.ok(pin, "версия pnpm пиннится через env PNPM_VERSION");
+  assert.equal(
+    (rel.match(new RegExp(pin[1].replace(/\./g, "\\."), "g")) ?? []).length,
+    1,
+    "версия pnpm — единая точка пина (одно вхождение литерала)",
+  );
+});
+
+test("release.yml материализуется на node-корне С корневым packageManager без action-setup-конфликта (DEVOPSER-196)", () => {
+  const repo = mkRepo();
+  try {
+    // Точный кейс живого регресса: node-корень с packageManager (раскладка devopser/потребителей).
+    writeFileSync(
+      join(repo, "package.json"),
+      `${JSON.stringify({ name: "x", packageManager: "pnpm@10.11.0" }, null, 2)}\n`,
+    );
+    assert.equal(run(repo).status, 0);
+    const rel = readFileSync(join(repo, ".github/workflows/release.yml"), "utf8");
+    // Никакого coupling'а setup↔packageManager: pnpm НЕ ставится version-input-экшеном.
+    assert.doesNotMatch(rel, /uses:\s*pnpm\/action-setup/, "нет action-setup → нет version↔packageManager конфликта");
+    assert.match(rel, /npm install -g pnpm@/, "pnpm ставится packageManager-агностичным run-шагом");
+    assert.equal(run(repo, "--check").status, 0, "release-меха drift чист на packageManager-репо");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("пресет с unknown target → loud-fail (target вне таксономии)", () => {
   const repo = mkRepo();
   try {

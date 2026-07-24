@@ -5,9 +5,16 @@
 # УНИВЕРСАЛЬНАЯ, root-agnostic (kb:ADR-17): ОДНА форма на любой рут-стек (go / node / python /
 # полиглот). Материализуется в ЛЮБОЙ репо БЕЗ стек-гейта — нет публикуемых пакетов → зелёный
 # no-op. node здесь — РАНТАЙМ публикации (версия пиннится явно, НЕ node-version-file из корня),
-# pnpm пиннится в workflow — корневой package.json/pnpm-lock НЕ требуется (пакет может жить в
-# подпапке go-корня). Publish ИДЕМПОТЕНТЕН (DEVOPSER-132): новые версии выкатываются, уже
-# опубликованные пропускаются с логом (не роняют джобу) — партиал-бамп ок.
+# корневой package.json/pnpm-lock НЕ требуется (пакет может жить в подпапке go-корня).
+#
+# pnpm ставится глобальным install-шагом, НЕ через `pnpm/action-setup` (DEVOPSER-196): экшен
+# падает ERR_PNPM_BAD_PM_VERSION, если version-input соседствует с корневым `packageManager`
+# (node-корень devopser + большинство потребителей). `npm i -g pnpm@<pin>` корневой
+# packageManager НЕ читает → одна форма на node-корень-с-packageManager / go-корень / пусто.
+# Пин версии pnpm — ЕДИНАЯ точка (env PNPM_VERSION ниже).
+#
+# Publish ИДЕМПОТЕНТЕН (DEVOPSER-132): новые версии выкатываются, уже опубликованные
+# пропускаются с логом (не роняют джобу) — партиал-бамп ок.
 name: Release packages
 
 on:
@@ -17,19 +24,21 @@ permissions:
   contents: read
   packages: write
 
+env:
+  PNPM_VERSION: 10.11.0 # ЕДИНАЯ точка пина pnpm-рантайма публикации (root-agnostic)
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10 # пин рантайма публикации (root-agnostic: без корневого packageManager)
       - uses: actions/setup-node@v6
         with:
           node-version: 22 # рантайм публикации, НЕ node-version-file из корня (kb:ADR-17)
           registry-url: https://npm.pkg.github.com
           scope: '@omnifield'
+      # Глобальный pnpm БЕЗ pnpm/action-setup — не коллизит с корневым packageManager (DEVOPSER-196).
+      - run: npm install -g pnpm@${{ env.PNPM_VERSION }}
       # Скан ПО ПАКЕТАМ (не по корню): издаёт все @omnifield/* не-private где бы ни лежали,
       # каждый идемпотентно (дубликат → skip). Нет пакетов → no-op. Корневой install не нужен.
       - run: node scripts/publish-idempotent.mjs
