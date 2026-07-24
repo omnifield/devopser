@@ -681,8 +681,9 @@ function validateBoundPlugins(plugins, stacks) {
   return errors;
 }
 
-// Группировка bound-пресетов по declared target (репорт; DEVOPSER-101). Только resolvable мета;
-// показывает активные (repo-config) и declared-empty (release/git-flow) plug-in точки.
+// Группировка по declared target (репорт; DEVOPSER-101). Slot'ы дают пресеты (repo-config) и
+// вендоренный git-flow; target без пресет-слотов, но с managed-мехой (release — release.yml +
+// publish-idempotent, DEVOPSER-194) виден статусом из таксономии (active/bound/declared), а не «—».
 function reportTargets(target) {
   const groups = {};
   for (const t of knownTargets()) groups[t] = [];
@@ -695,7 +696,10 @@ function reportTargets(target) {
   const gf = vendoredGitFlowMeta();
   if (gf?.target && groups[gf.target]) groups[gf.target].push(gf.slot);
   const line = Object.entries(groups)
-    .map(([t, slots]) => `${t}: ${slots.length ? slots.join(", ") : "—"}`)
+    .map(([t, slots]) => {
+      const status = TEMPLATE.targets?.[t] ?? "—";
+      return `${t}: ${slots.length ? slots.join(", ") : status}`;
+    })
     .join(" | ");
   console.log(`[skeleton targets] ${line}`);
 }
