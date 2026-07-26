@@ -17,6 +17,10 @@ Thumbs.db
 .claude/.main-session-id
 .claude/settings.local.json
 
+# Артефакт установки agent-harness (бандл плагина brainer) — обвязка в .claude/ и
+# .omnifield/ трекается, сам бандл-источник нет.
+agent-harness-plugin/
+
 # >>> omnifield-skeleton (managed by devopser; синк: init.mjs, не редактировать руками) >>>
 # Node
 node_modules/
