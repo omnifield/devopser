@@ -49,7 +49,7 @@ jobs:
         uses: omnifield/devopser/.github/actions/gitleaks@main
       # Версия Go — из пина вызывателя (go.mod), не отсюда. check-latest: false —
       # берём ровно запинённую, не подтягиваем свежак молча.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: false
