@@ -51,7 +51,7 @@ jobs:
         with:
           package_json_file: ${{ inputs.working-directory }}/package.json
       # node — из engines.node того же воркспейса; кэш pnpm по его lock-файлу.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: ${{ inputs.working-directory }}/package.json
           cache: pnpm
