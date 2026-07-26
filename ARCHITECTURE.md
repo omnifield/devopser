@@ -1,7 +1,11 @@
 # Architecture — Omnifield Devopser
 
-Repo-local north star. Дисциплина/канон — `omnifield/commons/standards/`. Канон/история
-решений — knowledger KB (зоны FUND/ADR/MECH/DEVOPSER); `briefs/` — аудируется под ретайр.
+Repo-local north star. Канон/история решений — knowledger KB (зоны FUND/ADR/MECH/DEVOPSER,
+концепт v2 — `kb:DEVOPSER2-2`); задачи — tasker (ws `DEVOPSER2`). Локальных координационных
+файлов не заводим — истина живёт снаружи репо.
+
+> ⚠️ Документ описывает раскладку v1 (skeleton-центричную) и переписывается под v2
+> (devopser = лаунчер репозитория) — сверяйся с `kb:DEVOPSER2-2`.
 
 ## Что это
 
@@ -39,7 +43,6 @@ reusable node-ci по всей истории. Секция секретов о�
 | `stacks/portainer/` | web-пульт docker-хостов (первый needs-driven стек; заказчик — user) |
 | `registry/` | СВОИ хост-порты devopser (`ports.md`: :8080/:9443). Контракты продуктов (маршруты/порты) — в их манифестах; devopser держит механизм (схема + скан), не данные продуктов |
 | `workstation/` | bootstrap dev-машины + карта репо |
-| `briefs/` | брифы architect → owner + история решений |
 
 ## Runtime-стеки — только под заказ
 
